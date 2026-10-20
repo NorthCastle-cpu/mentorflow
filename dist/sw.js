@@ -1,5 +1,5 @@
 // MentorFlow service worker: precache the app shell, serve cache-first, works from any subpath.
-const VERSION = 'cf62cde0d6';
+const VERSION = '1f126edd9f';
 const CACHE = 'mentorflow-' + VERSION;
 const ASSETS = [
   "./",

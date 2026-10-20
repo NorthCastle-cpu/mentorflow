@@ -56,7 +56,7 @@ export function openSheet(html, { wide = false, onClose } = {}) {
   requestAnimationFrame(() => {
     el.classList.add('open');
     const f = el.querySelector('[autofocus], input:not([type=hidden]):not([type=checkbox]), textarea, select, button');
-    if (f && matchMedia('(pointer:fine)').matches) f.focus();
+    if (f && matchMedia('(pointer:fine)').matches && !el.contains(document.activeElement)) f.focus();
   });
   return el.querySelector('.sheet');
 }

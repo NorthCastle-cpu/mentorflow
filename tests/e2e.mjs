@@ -13,14 +13,17 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 async function step(name, fn) {
   try { await fn(); results.push(['PASS', name]); console.log('  ✓', name); }
-  catch (e) { results.push(['FAIL', name, e.message.split('\n')[0]]); console.log('  ✗', name, '—', e.message.split('\n')[0]); }
+  catch (e) {
+    results.push(['FAIL', name, e.message.split('\n')[0]]); console.log('  ✗', name, '—', e.message.split('\n')[0]);
+    if (process.env.DEBUG_FAIL && globalThis.__page) { try { const f = `${SHOTS}FAIL-${name.replace(/\W+/g, '_')}.png`; await globalThis.__page.screenshot({ path: f }); console.log('    debug:', f, await globalThis.__page.evaluate(() => JSON.stringify({ hash: location.hash, sheets: document.querySelectorAll('.sheet').length, n: window.__mentorflow?.state.sessions.length, active: document.activeElement?.outerHTML.slice(0, 80) }))); } catch {} }
+  }
 }
 
 async function functional(type, launcher) {
   console.log(`\n[${type}] functional`);
   const browser = await launcher.launch();
   const ctx = await browser.newContext({ acceptDownloads: true, viewport: { width: 1180, height: 820 }, locale: 'en-GB', timezoneId: 'Europe/London' });
-  const page = await ctx.newPage();
+  const page = await ctx.newPage(); globalThis.__page = page;
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   const today = new Date(); const T = ymd(today); const month = T.slice(0, 7);
   const sheet = page.locator('.sheet');
