@@ -3,6 +3,8 @@
 import { chromium, webkit } from 'playwright';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+const validateIcs = (path, n) => JSON.parse(execFileSync('python3', [new URL('./validate_ics.py', import.meta.url).pathname, path, String(n)]).toString());
 const BASE = process.env.BASE_URL || 'http://localhost:8080/mentorflow/';
 const which = process.argv[2] || 'all';
 const SHOTS = new URL('../screenshots/', import.meta.url).pathname; mkdirSync(SHOTS, { recursive: true });
@@ -67,6 +69,80 @@ async function functional(type, launcher) {
     const btn = sheet.locator('button:has-text("Import 2 sessions")');
     await btn.click(); await page.waitForSelector('.sheet', { state: 'detached' });
     const n = await page.evaluate(() => window.__mentorflow.state.sessions.length); assert.equal(n, 3);
+  });
+  const calBtn = page.locator('[data-testid=calendar-export]');
+  const setTimes = (spec) => page.evaluate(async (spec) => {
+    const db = await import('./js/db.js'); const st = await import('./js/store.js'); const S = st.state;
+    const iso = (daysAgo) => { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - daysAgo); return d.toISOString(); };
+    S.sessions.forEach((x, i) => { const a = spec[i % spec.length]; x.createdAt = iso(a); x.updatedAt = iso(a); });
+    await db.putMany('sessions', S.sessions); st.saveSettings({});
+  }, spec);
+  await step('calendar card: "Add 3 new lessons to Calendar" exports a valid .ics', async () => {
+    await page.goto(BASE + '#/today');
+    assert.equal((await calBtn.innerText()).trim(), 'Add 3 new lessons to Calendar');
+    const [dl] = await Promise.all([page.waitForEvent('download'), calBtn.click()]);
+    assert.equal(dl.suggestedFilename(), `mentorflow-lessons-${T}.ics`);
+    const r = validateIcs(await dl.path(), 3);
+    assert.deepEqual(r.problems, []);
+    assert.ok(r.events.every(e => e.summary === 'Test Student One – Maths' && e.alarms === 0 && e.seq === 0));
+    assert.ok(r.events.every(e => /^Channel: Direct/.test(e.description)));
+    await page.waitForSelector('.session .cal-badge');
+    const st = await page.evaluate(() => window.__mentorflow.state.settings.lastCalendarExportAt); assert.ok(st);
+  });
+  await step('calendar range control: Today / Last 3 days / Last 7 days / All lessons with counts', async () => {
+    await setTimes([0, 2, 5]); // one session touched today, one 2 days ago, one 5 days ago
+    await page.goto(BASE + '#/today');
+    const label = async (r) => { await page.click(`[data-action=calendar-range][data-range="${r}"]`); await page.waitForSelector(`[data-action=calendar-range][data-range="${r}"].on`); return (await calBtn.innerText()).trim(); };
+    assert.equal(await label('today'), 'Add 1 new lesson to Calendar');
+    assert.equal(await label('3d'), 'Add 2 new or changed lessons to Calendar');
+    assert.equal(await label('7d'), 'Add 3 new or changed lessons to Calendar');
+    assert.equal(await label('all'), 'Add all 3 lessons to Calendar');
+    const [dl] = await Promise.all([page.waitForEvent('download'), calBtn.click()]);
+    assert.deepEqual(validateIcs(await dl.path(), 3).problems, []);
+    await setTimes([10]);
+    assert.equal(await label('today'), 'No new or changed lessons today'); assert.ok(await calBtn.isDisabled());
+    assert.equal(await label('7d'), 'No new or changed lessons in the last 7 days'); assert.ok(await calBtn.isDisabled());
+    assert.equal(await label('all'), 'Add all 3 lessons to Calendar');
+    await label('today');
+    await page.reload(); await page.waitForSelector('[data-action=calendar-range][data-range="today"].on'); // range persists
+  });
+  await step('"Add everything new since last time" appears when last export was before today', async () => {
+    await setTimes([10, 1, 10]);
+    await page.evaluate(async () => { const st = await import('./js/store.js'); const d = new Date(); d.setDate(d.getDate() - 3); st.saveSettings({ lastCalendarExportAt: d.toISOString() }); });
+    const since = page.locator('[data-testid=calendar-export-since]');
+    assert.equal((await since.innerText()).trim(), 'Add everything new since last time (1)');
+    const [dl] = await Promise.all([page.waitForEvent('download'), since.click()]);
+    assert.deepEqual(validateIcs(await dl.path(), 1).problems, []);
+    await page.waitForSelector('[data-testid=calendar-export-since]', { state: 'detached' });
+  });
+  await step('per-session Add to Calendar; edit bumps SEQUENCE and clears badge; cancelled → STATUS:CANCELLED', async () => {
+    await page.goto(BASE + '#/today');
+    await page.click('.session .row-main');
+    const [dl] = await Promise.all([page.waitForEvent('download'), sheet.locator('[data-testid=session-add-calendar]').click()]);
+    assert.match(dl.suggestedFilename(), /^mentorflow-lesson-test-student-one-\d{4}-\d{2}-\d{2}\.ics$/);
+    const r1 = validateIcs(await dl.path(), 1); assert.deepEqual(r1.problems, []);
+    await page.waitForSelector('.session .cal-badge');
+    await page.click('.session .row-main');
+    await sheet.locator('label:has(input[name=status][value=cancelled])').click();
+    await sheet.locator('button[type=submit]').click(); await page.waitForSelector('.sheet', { state: 'detached' });
+    assert.equal(await page.locator('.session .cal-badge').count(), 0);
+    await page.click('.session .row-main');
+    const [dl2] = await Promise.all([page.waitForEvent('download'), sheet.locator('[data-testid=session-add-calendar]').click()]);
+    const r2 = validateIcs(await dl2.path(), 1);
+    assert.equal(r2.events[0].uid, r1.events[0].uid); assert.equal(r2.events[0].seq, r1.events[0].seq + 1); assert.equal(r2.events[0].status, 'CANCELLED');
+    // restore to completed for later money checks
+    await page.click('.session .row-main'); await sheet.locator('label:has(input[name=status][value=completed])').click();
+    await sheet.locator('button[type=submit]').click(); await page.waitForSelector('.sheet', { state: 'detached' });
+  });
+  await step('More: reminder toggle defaults OFF; ON adds VALARM; Export all upcoming lessons', async () => {
+    await page.goto(BASE + '#/more');
+    assert.equal(await page.locator('[data-testid=calendar-alarm]').isChecked(), false);
+    await page.locator('[data-testid=calendar-alarm]').check(); await page.waitForFunction(() => window.__mentorflow.state.settings.calendarAlarm === true);
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-testid=calendar-export-upcoming]')]);
+    const up = await page.evaluate((T) => window.__mentorflow.state.sessions.filter(s => s.date >= T).length, T);
+    const r = validateIcs(await dl.path(), up); assert.deepEqual(r.problems, []);
+    assert.ok(r.events.filter(e => e.status !== 'CANCELLED').every(e => e.alarms === 1));
+    await page.locator('[data-testid=calendar-alarm]').uncheck(); await page.waitForFunction(() => window.__mentorflow.state.settings.calendarAlarm === false);
   });
   await step('calendar shows sessions & TimeTree tip', async () => {
     await page.goto(BASE + '#/sessions'); await page.waitForSelector('.cal-grid');
@@ -199,6 +275,28 @@ async function screenshots(type, launcher) {
       await ctx.close();
     });
   }
+  await step('iPad user agent: opens .ics directly (no download attr) and offers Share / Save to Files fallback', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1024, height: 1366 }, userAgent: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1', hasTouch: true, locale: 'en-GB', timezoneId: 'Europe/London', acceptDownloads: true });
+    const page = await ctx.newPage(); await page.goto(BASE); await page.click('[data-action=sample-data]'); await page.waitForSelector('[data-testid=calendar-export]');
+    await page.evaluate(() => { HTMLAnchorElement.prototype.click = function () { window.__clicked = { href: this.href, download: this.download }; }; });
+    await page.click('[data-testid=calendar-export]');
+    const info = await page.evaluate(() => ({ last: window.__mentorflowLastIcs, clicked: window.__clicked }));
+    assert.equal(info.last.method, 'open'); assert.ok(info.clicked.href.startsWith('blob:')); assert.equal(info.clicked.download, '');
+    await page.waitForSelector('.sheet:has-text("Share / Save to Files")');
+    await page.click('.sheet [data-action=close-sheet]');
+    await ctx.close();
+  });
+  await step('screenshot: Today calendar button (sample data, iPad + iPhone)', async () => {
+    for (const [dev, viewport] of [['ipad', { width: 1024, height: 1366 }], ['iphone', { width: 390, height: 844 }]]) {
+      const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, locale: 'en-GB', timezoneId: 'Europe/London' });
+      const page = await ctx.newPage(); await page.goto(BASE); await page.click('[data-action=sample-data]');
+      await page.waitForSelector('[data-testid=calendar-export]'); await page.waitForTimeout(2700); // let toast fade
+      await page.locator('[data-testid=calendar-card]').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${SHOTS}${type}-${dev}-calendar-today-button.png` });
+      await page.locator('[data-testid=calendar-card]').screenshot({ path: `${SHOTS}${type}-${dev}-calendar-card.png` });
+      await ctx.close();
+    }
+  });
   await browser.close();
 }
 

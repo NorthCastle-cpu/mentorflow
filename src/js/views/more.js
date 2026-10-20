@@ -5,7 +5,7 @@ import { isPersistentStorage } from '../db.js';
 import { PROVIDERS } from '../sync.js';
 
 export const title = 'More';
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 const f = (name, label, { type = 'text', ...o } = {}) => `<label class="field"><span>${esc(label)}</span>${type === 'textarea' ? `<textarea name="${name}" rows="3" data-setting>${esc(state.settings[name])}</textarea>` : `<input name="${name}" type="${type}" value="${esc(state.settings[name])}" data-setting ${o.attrs || ''}>`}</label>`;
 
 export const SHORTCUTS = [['⌘K / Ctrl+K or /', 'Search everything'], ['n', 'Log a session'], ['a', 'Add a student'], ['t', 'New task'], ['e', 'New expense'], ['i', 'Quick Import'], ['1 – 7', 'Today, Students, Sessions, Tasks, Money, Expenses, More'], ['[ and ]', 'Previous / next month'], ['?', 'Show shortcuts'], ['Esc', 'Close sheet']];
@@ -35,6 +35,10 @@ export function render() {
       ${hasSampleData() ? `<button class="btn" data-action="clear-sample">${icon('close')} Clear sample data</button>` : `<button class="btn" data-action="sample-data">${icon('sparkle')} Load sample data</button>`}
       <button class="btn danger" data-action="erase-all">${icon('trash')} Erase all data</button>
     </div></section>
+  <section class="card" id="calendar"><header class="card-head"><h3>Calendar</h3><button class="link-btn" data-action="calendar-help">${icon('info')} How it works</button></header>
+    <label class="check"><input type="checkbox" name="calendarAlarm" data-setting ${S.calendarAlarm ? 'checked' : ''} data-testid="calendar-alarm"> Add a 30-minute reminder to exported lessons</label>
+    <p class="muted small">Off by default – TimeTree already reminds you. ${S.lastCalendarExportAt ? `Last added to Calendar: ${esc(new Date(S.lastCalendarExportAt).toLocaleString('en-GB'))}.` : 'Nothing added to Calendar yet.'}</p>
+    <div class="btn-row"><button class="btn" data-action="calendar-export-upcoming" data-testid="calendar-export-upcoming">${icon('calCheck')} Export all upcoming lessons to Calendar</button></div></section>
   <section class="card"><header class="card-head"><h3>Sync</h3></header>
     <label class="field"><span>Sync provider</span><select name="syncProvider" data-setting>${Object.entries(PROVIDERS).map(([k, P]) => { const p = new P(); return `<option value="${k}" ${S.syncProvider === k ? 'selected' : ''} ${p.available ? '' : 'disabled'}>${esc(p.label)}</option>`; }).join('')}</select></label>
     <p class="muted small">Notion sync is planned. Until then MentorFlow is local-only: use JSON backup to move data between iPad and PC.</p></section>

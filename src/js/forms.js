@@ -3,6 +3,8 @@ import { state, saveStudent, saveSession, saveTask, saveExpense, deleteStudent, 
 import { openSheet, closeSheet, sheetHeader, toast, confirmDialog, icon } from './ui.js';
 import { esc, todayStr, ymd, parseYmd, addDays, fmtDate, endTime, money } from './util.js';
 import { parseQuickImport } from './parser.js';
+import { exportSingle } from './calendar-ui.js';
+import { isCalendarExported } from './store.js';
 
 const opt = (v, label, sel) => `<option value="${esc(v)}" ${String(v) === String(sel) ? 'selected' : ''}>${esc(label)}</option>`;
 const activeStudents = (includeId) => state.students.filter(s => s.active !== false || s.id === includeId).sort((a, b) => a.name.localeCompare(b.name));
@@ -29,7 +31,8 @@ export function studentForm(id) {
     <label class="field"><span>Usual length (mins)</span><input name="defaultDuration" type="number" inputmode="numeric" min="5" step="5" value="${esc(s.defaultDuration || 60)}"></label></div>
     <div class="row2"><label class="field"><span>Parent / carer name</span><input name="parentName" value="${esc(s.parentName)}"></label>
     <label class="field"><span>Parent email</span><input name="parentEmail" type="email" value="${esc(s.parentEmail)}" inputmode="email"></label></div>
-    <label class="field"><span>Parent phone</span><input name="parentPhone" type="tel" value="${esc(s.parentPhone)}"></label>
+    <div class="row2"><label class="field"><span>Parent phone</span><input name="parentPhone" type="tel" value="${esc(s.parentPhone)}"></label>
+    <label class="field"><span>Usual location (optional)</span><input name="location" value="${esc(s.location)}" placeholder="e.g. Online, or address"></label></div>
     <div class="field"><span>TimeTree label / calendar name <button type="button" class="link-btn" data-action="timetree-tip">${icon('info')} Tip</button></span>
       <input name="label" value="${esc(s.label)}" placeholder="The word you use in TimeTree event titles"></div>
     <div class="field"><span>Colour</span><div class="swatches">${colors}</div></div>
@@ -57,6 +60,7 @@ export function timetreeTip() {
   <li>If two students share a first name, set unique labels such as <code>Jo B</code> and <code>Jo K</code>.</li>
   <li>Open the day/week list in TimeTree, select the events, copy, and paste into <b>Sessions → Quick Import</b>. Lines with a date on their own act as headings for the events below them.</li>
   <li>Add <code>cancelled</code> to an event title and it will be imported as cancelled.</li></ol>
+  <p><b>Going the other way:</b> lessons logged in MentorFlow can be sent to your iPad Calendar. Tap <b>Add … lessons to Calendar</b> on Today each evening → <b>Add All</b>. TimeTree then shows them on its <b>home calendar</b> (not shared calendars) if it has access: <b>Settings › TimeTree › Calendars → Full Access</b>.</p>
   <p class="muted">Supported formats include <code>Mon 12 Oct 16:00–17:00 Student A</code>, <code>12/10 4pm Student A 90m</code>, <code>2026-10-12 4:30-5:30pm Student C</code> and date headings followed by <code>16:00 - 17:00 Student A</code>.</p>
   </div><footer class="sheet-foot"><span class="grow"></span><button class="btn primary" data-action="close-sheet">Got it</button></footer>`);
 }
@@ -75,12 +79,14 @@ export function sessionForm(id, preset = {}) {
     <label class="field"><span>Start</span><input type="time" name="start" required value="${esc(s.start)}" step="300"></label>
     <label class="field"><span>Minutes</span><input type="number" name="duration" required min="5" max="600" step="5" inputmode="numeric" value="${esc(s.duration)}" list="dur-list"><datalist id="dur-list"><option value="30"><option value="45"><option value="60"><option value="90"><option value="120"></datalist></label></div>
     <div class="field"><span>Status</span><div class="seg">${Object.entries(SESSION_STATUS).map(([k, v]) => `<label><input type="radio" name="status" value="${k}" ${s.status === k ? 'checked' : ''}><span>${esc(v.label.replace(' (charged)', ''))}</span></label>`).join('')}</div></div>
+    <label class="field"><span>Location (optional)</span><input name="location" value="${esc(s.location ?? '')}" placeholder="Uses student's usual location"></label>
     <label class="field"><span>Rate override (£/h, optional)</span><input type="number" name="rate" min="0" step="0.01" inputmode="decimal" value="${esc(s.rate ?? '')}" placeholder="Uses student's rate"></label>
     <label class="field"><span>Notes</span><textarea name="notes" rows="3" placeholder="What did you cover?">${esc(s.notes)}</textarea></label>
     ${!id ? `<label class="field"><span>Repeat weekly</span><select name="repeat">${[0, 1, 2, 3, 5, 7, 11].map(n => opt(n, n ? `+ ${n} more week${n > 1 ? 's' : ''}` : 'Does not repeat', 0)).join('')}</select></label>` : ''}
     <p class="muted small" data-x="value"></p>
   </form>
-  <footer class="sheet-foot">${id ? `<button class="btn danger ghost" data-x="del">${icon('trash')} Delete</button>` : ''}<span class="grow"></span><button class="btn" data-action="close-sheet">Cancel</button><button class="btn primary" type="submit" form="session-form">Save</button></footer>`);
+  <footer class="sheet-foot">${id ? `<button class="btn danger ghost" data-x="del">${icon('trash')} Delete</button><button class="btn" data-x="cal" data-testid="session-add-calendar">${icon('calCheck')} ${isCalendarExported(ex) ? 'Re-add to Calendar' : 'Add to Calendar'}</button>` : ''}<span class="grow"></span><button class="btn" data-action="close-sheet">Cancel</button><button class="btn primary" type="submit" form="session-form">Save</button></footer>`);
+  sheet.querySelector('[data-x=cal]')?.addEventListener('click', () => { const cur = state.sessions.find(x => x.id === id); closeSheet(); if (cur) exportSingle(cur); });
   const form = sheet.querySelector('form');
   const updateValue = () => {
     const d = formData(form); const st = studentById(d.studentId);
@@ -91,14 +97,15 @@ export function sessionForm(id, preset = {}) {
   form.studentId.addEventListener('change', () => { const st = studentById(form.studentId.value); if (st && !id) form.duration.value = st.defaultDuration || form.duration.value; updateValue(); });
   updateValue();
   bindForm(sheet, (d) => {
-    const base = { ...(ex || {}), studentId: d.studentId, date: d.date, start: d.start, duration: +d.duration, status: d.status || 'scheduled', rate: d.rate === '' ? null : +d.rate, notes: d.notes, source: ex?.source || 'manual' };
+    const base = { ...(ex || {}), studentId: d.studentId, date: d.date, start: d.start, duration: +d.duration, status: d.status || 'scheduled', rate: d.rate === '' ? null : +d.rate, location: d.location || '', notes: d.notes, source: ex?.source || 'manual' };
     saveSession(base);
     const rep = +d.repeat || 0;
     if (rep) addSessionsBulk(Array.from({ length: rep }, (_, i) => ({ ...base, id: undefined, date: ymd(addDays(parseYmd(d.date), 7 * (i + 1))), status: 'scheduled', notes: '' })));
     closeSheet(); toast(id ? 'Session updated' : `Session logged${rep ? ` (+${rep} repeats)` : ''}`, { type: 'ok' });
   });
   sheet.querySelector('[data-x=del]')?.addEventListener('click', async () => {
-    if (await confirmDialog('Delete this session?', { confirmText: 'Delete', danger: true })) { deleteSession(id); closeSheet(); toast('Session deleted'); }
+    const msg = ex?.calendarExportedAt ? 'Delete this session? It was added to Calendar – deleting here won’t remove it there. To update Calendar, mark it Cancelled and re-add instead.' : 'Delete this session?';
+    if (await confirmDialog(msg, { confirmText: 'Delete', danger: true })) { deleteSession(id); closeSheet(); toast('Session deleted'); }
   });
 }
 

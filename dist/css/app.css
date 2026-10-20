@@ -331,3 +331,11 @@ pre { white-space: pre-wrap; font-size: .8rem; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 @media print { .sidebar, .tabbar, .topbar, #toast-root { display: none !important; } }
 .cal-ev small { opacity: .7; font-size: .62rem; }
+/* calendar export */
+.cal-export { display: flex; flex-direction: column; gap: 10px; }
+.cal-export .card-head { margin-bottom: 0; } .cal-export h3 { display: flex; gap: 8px; align-items: center; }
+.cal-range { align-self: flex-start; } .cal-range button { min-height: 36px; }
+.cal-go { min-height: 48px; font-size: 1rem; }
+.cal-badge { display: inline-flex; vertical-align: -3px; margin-left: 6px; color: var(--accent); }
+.cal-badge .ic { width: 16px; height: 16px; }
+@media (min-width: 900px) { .cal-export { flex-direction: row; flex-wrap: wrap; align-items: center; } .cal-export .card-head { flex-basis: 100%; } .cal-go { flex: 1; min-width: 260px; } .cal-export > .btn:not(.cal-go) { flex: 0 1 auto; } .cal-export p { flex-basis: 100%; margin: 0; } }

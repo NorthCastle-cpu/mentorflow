@@ -9,6 +9,23 @@ Luba Jones hours CSV, direct-to-parent email), expenses, global search and keybo
 * **Install on iPad:** open the site in Safari → Share → *Add to Home Screen*. Runs full-screen and offline.
 * **Install on Windows:** Edge/Chrome → ⋯ → Apps → *Install this site as an app*.
 
+## Calendar export (.ics → iPad Calendar → TimeTree)
+
+Today has an **Add … lessons to Calendar** button with a range choice (*Today*, *Last 3 days*, *Last 7 days*,
+*All lessons*), plus *Add everything new since last time* when the last export was before today. Each session can also
+be added on its own (session sheet), and **More › Calendar** exports all upcoming lessons and has the reminder toggle
+(30-minute alert, **off by default**).
+
+* RFC 5545 output: `VTIMEZONE` Europe/London, `DTSTART/DTEND;TZID=Europe/London`, stable `UID:<sessionId>@mentorflow`,
+  `SEQUENCE` bumped on every edit (so re-adding updates the event where Calendar supports it), `STATUS:CANCELLED` for
+  cancelled lessons, `CATEGORIES` = TimeTree label, description = channel + notes (never rates or money).
+* Exported sessions show a calendar-check badge until they are edited again.
+* **Delivery:** on iPhone/iPad the file is opened directly as a `text/calendar` blob (no `download` attribute, no
+  charset parameter), which Safari hands to its Calendar preview with **Add All**. A follow-up sheet offers
+  **Share / Save to Files** (Web Share API with the .ics file) in case the preview does not appear – e.g. in some
+  Home Screen app versions – after which tapping the file in Files shows **Add All**. Other platforms download the .ics.
+* TimeTree shows device-calendar events on its home calendar only (Settings › TimeTree › Calendars → Full Access).
+
 ## Develop
 
 ```bash
@@ -16,6 +33,7 @@ npm install          # only needed for tests (Playwright) – the app itself has
 npm run build        # src/ → dist/ (stamps the service-worker cache version)
 npm run serve        # http://localhost:8080
 node tests/parser.test.mjs
+node tests/calendar.test.mjs   # validates .ics with ical.js + python icalendar
 node tests/e2e.mjs all   # expects dist served at http://localhost:8080/mentorflow/ (see BASE_URL)
 ```
 

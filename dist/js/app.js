@@ -5,6 +5,7 @@ import { icon, openSheet, closeSheet, sheetHeader, sheetOpen, toast, confirmDial
 import { ui, setUi } from './uistate.js';
 import { studentForm, sessionForm, taskForm, expenseForm, quickImport, timetreeTip, labelHex } from './forms.js';
 import { downloadSessionsCsv, downloadLubaCsv, guidewellPdf, openPrintableInvoice, parentEmail } from './export.js';
+import { calendarHelp, exportRange, exportSince, exportUpcoming, setRange } from './calendar-ui.js';
 import * as Today from './views/today.js';
 import * as Students from './views/students.js';
 import * as Sessions from './views/sessions.js';
@@ -93,6 +94,11 @@ const ACTIONS = {
   'timetree-tip': () => timetreeTip(),
   'dismiss-tip': () => saveSettings({ timetreeTipDismissed: true }),
   'open-search': () => openSearch(),
+  'calendar-help': () => calendarHelp(),
+  'calendar-range': (el) => setRange(el.dataset.range),
+  'calendar-export': (el) => exportRange(el.dataset.range),
+  'calendar-export-since': () => exportSince(),
+  'calendar-export-upcoming': () => exportUpcoming(),
   'set-status': (el) => { const s = state.sessions.find(x => x.id === el.dataset.id); if (s) { saveSession({ ...s, status: el.dataset.status }); toast(el.dataset.status === 'completed' ? `Completed · ${money(sessionValue(s))}` : 'Session cancelled', { type: 'ok' }); } },
   'mark-past-complete': async (el) => {
     const t = todayStr(); const list = state.sessions.filter(s => s.status === 'scheduled' && s.date < t && (!el.dataset.month || s.date.startsWith(el.dataset.month)));

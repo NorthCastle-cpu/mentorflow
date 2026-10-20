@@ -2,6 +2,8 @@ import { state, hasSampleData, sessionsOn, sessionValue, studentById, monthStats
 import { esc, money, todayStr, ymd, addDays, fmtDate, fmtDateLong, endTime, ym, fmtMonth, parseYmd, monthDays } from '../util.js';
 import { icon, emptyState, avatar, chip } from '../ui.js';
 import { labelHex } from '../forms.js';
+import { todayCalendarCard } from '../calendar-ui.js';
+import { isCalendarExported } from '../store.js';
 
 export function sessionRow(s, { showDate = false, actions = true } = {}) {
   const st = studentById(s.studentId);
@@ -10,7 +12,7 @@ export function sessionRow(s, { showDate = false, actions = true } = {}) {
     <button class="row-main" data-action="edit-session" data-id="${s.id}">
       <span class="lbl-bar"></span>
       <span class="time"><b>${esc(s.start)}</b><small>${esc(endTime(s.start, s.duration))}</small></span>
-      <span class="who"><b>${esc(st?.name || 'Unknown')}</b><small>${showDate ? esc(fmtDate(s.date)) + ' · ' : ''}${esc(st?.subject || '')}${s.notes ? ' · ' + esc(s.notes) : ''}</small></span>
+      <span class="who"><b>${esc(st?.name || 'Unknown')}${isCalendarExported(s) ? `<span class="cal-badge" title="Added to Calendar" aria-label="Added to Calendar">${icon('calCheck')}</span>` : ''}</b><small>${showDate ? esc(fmtDate(s.date)) + ' · ' : ''}${esc(st?.subject || '')}${s.notes ? ' · ' + esc(s.notes) : ''}</small></span>
       <span class="val"><b>${money(sessionValue(s))}</b><small>${esc(stat.label.replace(' (charged)', ''))}</small></span>
     </button>
     ${actions && s.status === 'scheduled' ? `<div class="row-actions"><button class="icon-btn ok" data-action="set-status" data-id="${s.id}" data-status="completed" title="Mark completed" aria-label="Mark completed">${icon('check')}</button><button class="icon-btn" data-action="set-status" data-id="${s.id}" data-status="cancelled" title="Cancel" aria-label="Cancel session">${icon('close')}</button></div>` : ''}
@@ -69,6 +71,7 @@ export function render() {
   </div>
   ${monthEnd ? `<div class="banner">${icon('file')}<div><b>Month-end for ${esc(fmtMonth(endMonth))}</b><small>Send Guidewell invoice, Luba Jones hours and parent emails.</small></div><button class="btn small" data-action="go" data-to="#/money" data-month="${endMonth}">Open checklist ${icon('arrowR')}</button></div>` : ''}
   ${unmarked.length ? `<div class="banner warn">${icon('alert')}<div><b>${unmarked.length} past session${unmarked.length === 1 ? '' : 's'} not marked</b><small>Mark them completed or cancelled so totals are right.</small></div><button class="btn small" data-action="mark-past-complete">Mark all completed</button></div>` : ''}
+  ${todayCalendarCard()}
   <div class="cols">
     <section class="card"><header class="card-head"><h3>Today’s sessions</h3><button class="icon-btn" data-action="new-session" data-date="${t}" aria-label="Add session">${icon('plus')}</button></header>
       ${todays.length ? `<div class="list">${todays.map(s => sessionRow(s)).join('')}</div>` : emptyState('sessions', 'No sessions today', 'Enjoy the breather, or log one now.', `<button class="btn small" data-action="new-session" data-date="${t}">Log session</button>`)}

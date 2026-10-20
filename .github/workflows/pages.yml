@@ -23,8 +23,14 @@ jobs:
           node-version: 20
       - name: Build (zero-dependency copy + SW stamp)
         run: node build.mjs
-      - name: Parser unit tests
-        run: node tests/parser.test.mjs
+      - name: Install test deps (ical.js, python icalendar)
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          pip install --quiet icalendar
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - name: Unit tests (parser + calendar/.ics)
+        run: node tests/parser.test.mjs && node tests/calendar.test.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

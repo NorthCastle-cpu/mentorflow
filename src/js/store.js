@@ -2,7 +2,7 @@
 import * as db from './db.js';
 import { uid, todayStr, ym, ymd, addDays, parseYmd, round2, timeToMins, addMonths } from './util.js';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const INVOICE_METHODS = {
   guidewell: { key: 'guidewell', label: 'Guidewell', short: 'GW', desc: 'Agency · monthly PDF invoice', color: '#0d9488' },
@@ -34,6 +34,7 @@ export const DEFAULT_SETTINGS = {
   invoicePrefix: 'MF-', nextInvoiceNumber: 1, paymentTermsDays: 14,
   theme: 'system', weekStartsMonday: true,
   syncProvider: 'local', notionToken: '', notionDatabaseId: '',
+  calendarAlarm: false, calendarRange: 'today', lastCalendarExportAt: '',
   onboarded: false,
 };
 
@@ -51,12 +52,25 @@ const emit = () => listeners.forEach(fn => { try { fn(); } catch (e) { console.e
 export async function load() {
   const [students, sessions, tasks, expenses, meta] = await Promise.all(db.STORES.map(s => db.getAll(s)));
   state.students = students; state.sessions = sessions; state.tasks = tasks; state.expenses = expenses;
+  migrateSessions(sessions);
   const settings = meta.find(m => m.id === 'settings');
   state.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
   state.checklists = {};
   meta.filter(m => m.id.startsWith('checklist-')).forEach(m => state.checklists[m.id.slice(10)] = m.items || {});
   state.ready = true;
   emit();
+}
+
+// Migration (schema v2): every session needs createdAt/updatedAt/sequence for calendar export.
+export function migrateSessions(sessions) {
+  const now = new Date().toISOString(); const migrated = [];
+  for (const s of sessions) {
+    if (!s.createdAt || !s.updatedAt || s.sequence == null) {
+      s.createdAt ||= now; s.updatedAt ||= s.createdAt; if (s.sequence == null) s.sequence = 0; migrated.push(s);
+    }
+  }
+  if (migrated.length) db.putMany('sessions', migrated).catch(console.error);
+  return migrated.length;
 }
 
 // ---------- generic CRUD ----------
@@ -77,7 +91,21 @@ function remove(coll, id) {
 }
 
 export const saveStudent = (s) => upsert('students', s);
-export const saveSession = (s) => upsert('sessions', s);
+export function saveSession(s) {
+  // Every edit bumps SEQUENCE so calendars treat a re-export as an update of the same event (same UID).
+  const prev = s.id ? state.sessions.find(x => x.id === s.id) : null;
+  const sequence = prev ? (+prev.sequence || 0) + 1 : (+s.sequence || 0);
+  return upsert('sessions', { ...s, sequence });
+}
+
+/** Record that sessions were sent to the calendar without touching updatedAt/sequence. */
+export function markCalendarExported(ids, at = new Date().toISOString()) {
+  const set = new Set(ids); const changed = [];
+  for (const s of state.sessions) if (set.has(s.id)) { s.calendarExportedAt = at; s.calendarExportedSeq = +s.sequence || 0; changed.push(s); }
+  db.putMany('sessions', changed).catch(console.error);
+  saveSettings({ lastCalendarExportAt: at });
+}
+export const isCalendarExported = (s) => !!s.calendarExportedAt && (+s.calendarExportedSeq || 0) === (+s.sequence || 0) && s.calendarExportedAt >= (s.updatedAt || '');
 export const saveTask = (t) => upsert('tasks', t);
 export const saveExpense = (e) => upsert('expenses', e);
 export const deleteSession = (id) => remove('sessions', id);
@@ -93,7 +121,7 @@ export function deleteStudent(id) {
 
 export function addSessionsBulk(list) {
   const now = new Date().toISOString();
-  const recs = list.map(s => ({ ...s, id: s.id || uid(), createdAt: now, updatedAt: now }));
+  const recs = list.map(s => ({ ...s, id: s.id || uid(), createdAt: now, updatedAt: now, sequence: 0 }));
   state.sessions.push(...recs);
   db.putMany('sessions', recs).catch(console.error);
   emit();
@@ -204,6 +232,7 @@ export async function importBackup(data, mode = 'replace') {
   };
   for (const coll of ['students', 'sessions', 'tasks', 'expenses']) {
     state[coll] = merge(coll);
+    if (coll === 'sessions') migrateSessions(state.sessions);
     await db.putMany(coll, state[coll]);
   }
   if (mode === 'replace' || !state.settings.onboarded) state.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}), id: 'settings' };
@@ -244,7 +273,7 @@ export async function loadSampleData() {
       let status = past ? 'completed' : 'scheduled';
       if (past && (d.getDate() * st.name.length) % 17 === 0) status = 'cancelled';
       else if (past && (d.getDate() * st.name.length) % 23 === 0) status = 'late_cancel';
-      sessions.push({ id: uid(), studentId: st.id, date, start: st.defaultTime, duration: st.subject.startsWith('A-level') ? 90 : 60, status, notes: past && status === 'completed' ? 'Good progress.' : '', source: 'sample' });
+      sessions.push({ id: uid(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), sequence: 0, studentId: st.id, date, start: st.defaultTime, duration: st.subject.startsWith('A-level') ? 90 : 60, status, notes: past && status === 'completed' ? 'Good progress.' : '', source: 'sample' });
     }
   }
   const mk = (title, type, studentId, dueOffset, status = 'todo', notes = '') => ({ id: uid(), sample: true, title, type, studentId, due: dueOffset == null ? '' : ymd(addDays(today, dueOffset)), status, notes, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
