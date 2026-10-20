@@ -1,0 +1,9 @@
+node_modules/
+screenshots/
+test-results.txt
+test-results/
+playwright-report/
+*.zip
+.DS_Store
+*.log
+.env*

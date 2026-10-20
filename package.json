@@ -1,0 +1,19 @@
+{
+  "name": "mentorflow-web",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node tests/parser.test.mjs && node tests/e2e.mjs",
+    "build": "node build.mjs",
+    "serve": "python3 -m http.server 8080 -d dist"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "jspdf": "^4.2.1",
+    "playwright": "^1.64.1"
+  }
+}
