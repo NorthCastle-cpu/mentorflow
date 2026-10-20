@@ -6,14 +6,14 @@ Branch `cloudflare`. GitHub Pages (`main`) keeps working unchanged until you dec
 
 | Thing | Value |
 | --- | --- |
-| Worker | `mentorflow`, at <https://mentorflow.sarah-arissa.workers.dev> (workers.dev only, no custom domain or route yet) |
-| D1 database | `mentorflow-db`, id `d24bf757-6036-44b1-8f58-e778cf3a56ce` (schema in `migrations/`) |
+| Worker | `mentorflow`, at <https://mentorflow.sarah-arissa.workers.dev> and the custom domain <https://mentorflow.saraharissa.com> (Workers custom domain; Cloudflare created its proxied DNS record) |
+| D1 database | `mentorflow-db-eu`, id `d08e8102-811a-4a10-99cd-d1bca95da0df`, EU jurisdiction (data stays in the EU; schema in `migrations/`). The earlier empty `mentorflow-db` was deleted |
 | Cron | `0 20,21 * * *`: sends only on the run where it is 21:00 in Europe/London |
 | Zero Trust team domain | `mentorflow.cloudflareaccess.com` |
 | Login method | One-time PIN (a code is emailed to the address being signed in) |
 | Reusable Access policy | **Sarah only**: allow `sarah_arissa@hotmail.co.uk`, 30-day session |
 | Access app | `MentorFlow (workers.dev)` → `mentorflow.sarah-arissa.workers.dev` (AUD `e3961f45…2c30`) |
-| Access app (pre-staged) | `MentorFlow (mentorflow.saraharissa.com, pre-staged)` (AUD `1ea2c5fb…c320`). It has no DNS or route yet |
+| Access app (pre-staged) | `MentorFlow (mentorflow.saraharissa.com, pre-staged)` (AUD `1ea2c5fb…c320`). It now protects the live custom domain |
 
 ## How it works
 * `wrangler.jsonc` serves `dist/` as static assets. `/api/*` always runs the Worker first (`run_worker_first`).

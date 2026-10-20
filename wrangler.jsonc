@@ -7,6 +7,9 @@
   "compatibility_date": "2026-05-01",
   "workers_dev": true,
   "preview_urls": false,
+  // Custom domain (Cloudflare creates the DNS record). Protected by the Access app
+  // "MentorFlow (mentorflow.saraharissa.com)"; the Worker also verifies the Access JWT itself.
+  "routes": [{ "pattern": "mentorflow.saraharissa.com", "custom_domain": true }],
   "assets": {
     "directory": "dist",
     "binding": "ASSETS",
@@ -14,7 +17,7 @@
     "run_worker_first": ["/api/*"]
   },
   "d1_databases": [
-    { "binding": "DB", "database_name": "mentorflow-db", "database_id": "d24bf757-6036-44b1-8f58-e778cf3a56ce", "migrations_dir": "migrations" }
+    { "binding": "DB", "database_name": "mentorflow-db-eu", "database_id": "d08e8102-811a-4a10-99cd-d1bca95da0df", "migrations_dir": "migrations" }
   ],
   "triggers": { "crons": ["0 20,21 * * *"] },
   "vars": {
