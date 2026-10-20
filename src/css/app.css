@@ -339,3 +339,4 @@ pre { white-space: pre-wrap; font-size: .8rem; }
 .cal-badge { display: inline-flex; vertical-align: -3px; margin-left: 6px; color: var(--accent); }
 .cal-badge .ic { width: 16px; height: 16px; }
 @media (min-width: 900px) { .cal-export { flex-direction: row; flex-wrap: wrap; align-items: center; } .cal-export .card-head { flex-basis: 100%; } .cal-go { flex: 1; min-width: 260px; } .cal-export > .btn:not(.cal-go) { flex: 0 1 auto; } .cal-export p { flex-basis: 100%; margin: 0; } }
+@media (max-width: 767px) { .cal-range { display: grid; grid-template-columns: repeat(4, 1fr); align-self: stretch; } .cal-range button { justify-content: center; padding: 7px 4px; white-space: nowrap; } }
