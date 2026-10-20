@@ -4,6 +4,7 @@ import { icon, emptyState, avatar, chip } from '../ui.js';
 import { labelHex } from '../forms.js';
 import { todayCalendarCard } from '../calendar-ui.js';
 import { isCalendarExported } from '../store.js';
+import { syncBannerHtml } from '../sync-ui.js';
 
 export function sessionRow(s, { showDate = false, actions = true } = {}) {
   const st = studentById(s.studentId);
@@ -61,6 +62,7 @@ export function render() {
   return `
   <div class="today-head"><div><p class="muted">${esc(fmtDateLong(t))}</p><h2>${greet}${state.settings.yourName ? ', ' + esc(state.settings.yourName.split(' ')[0]) : ''}</h2></div>
     <div class="btn-row"><button class="btn primary" data-action="new-session" data-date="${t}">${icon('plus')} Log session</button><button class="btn" data-action="quick-import">${icon('import')} Quick Import</button></div></div>
+  ${syncBannerHtml()}
   ${backupDue() ? `<div class="banner warn" data-testid="backup-reminder">${icon('cloud')}<div><b>${state.settings.lastBackupAt ? 'It’s been over a month since your last backup' : 'You haven’t backed up yet'}</b><small>Your data lives only on this device. Save a backup to Files / iCloud Drive.</small></div><button class="btn small primary" data-action="backup-export">Back up now</button><button class="icon-btn" data-action="dismiss-backup-reminder" aria-label="Dismiss backup reminder">${icon('close')}</button></div>` : ''}
   ${hasSampleData() ? `<div class="banner tip">${icon('info')}<div><b>You’re looking at sample data</b><small>All names, emails and bank details are fictional. Clear it before entering real students.</small></div><button class="btn small" data-action="clear-sample">Clear sample data</button></div>` : ''}
   <div class="kpis">

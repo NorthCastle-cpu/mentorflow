@@ -4,7 +4,9 @@ Offline-first Progressive Web App for tutors and mentors: students, sessions (mo
 My Tasks / Homework kanban, money dashboard with month-end checklists per invoice method (Guidewell PDF invoice,
 Luba Jones hours CSV, direct-to-parent email), expenses, global search and keyboard shortcuts.
 
-* **No backend.** All data is stored in the browser's IndexedDB on your device. Use **More → Back up now** regularly
+* **Local-first.** All data is stored in the browser's IndexedDB on your device. On Cloudflare (branch `cloudflare`,
+  see [CLOUDFLARE.md](CLOUDFLARE.md)) it also syncs to a private D1 database behind Cloudflare Access. On GitHub Pages
+  there is no backend. Use **More → Back up now** regularly
   (on iPad this opens the share sheet → *Save to Files* / iCloud Drive) and **Restore from backup** to move data.
 * **Install on iPad:** open the site in Safari → Share → *Add to Home Screen*. Runs full-screen and offline.
 * **Install on Windows:** Edge/Chrome → ⋯ → Apps → *Install this site as an app*.

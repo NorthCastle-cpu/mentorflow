@@ -1,0 +1,36 @@
+{
+  // MentorFlow on Cloudflare Workers (static assets + private sync API + 9pm digest).
+  // Deploy: npm run build && npx wrangler deploy
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mentorflow",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-05-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "dist",
+    "binding": "ASSETS",
+    // The sync API always reaches the Worker (and its JWT check); everything else is plain static files.
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "mentorflow-db", "database_id": "d24bf757-6036-44b1-8f58-e778cf3a56ce", "migrations_dir": "migrations" }
+  ],
+  "triggers": { "crons": ["0 20,21 * * *"] },
+  "vars": {
+    // Cloudflare Access (Zero Trust) team domain and the AUD tags of the Access apps that front this Worker
+    // (comma-separated: workers.dev app, mentorflow.saraharissa.com app).
+    "ACCESS_TEAM_DOMAIN": "https://mentorflow.cloudflareaccess.com",
+    "ACCESS_AUD": "e3961f450276597f51da296e90ab8d604455632bc4aff5b7b66b8ce65eb72c30,1ea2c5fb78797821209f1f94311e207b2580bb010d98f615cfc81d1ee093c320",
+    "ALLOWED_EMAIL": "sarah_arissa@hotmail.co.uk",
+    // 9pm digest email. Switch on (set to "true") once sarah_arissa@hotmail.co.uk is a VERIFIED
+    // Email Routing destination and Email Routing is enabled on saraharissa.com.
+    "DIGEST_ENABLED": "false",
+    "DIGEST_FROM": "mentorflow@saraharissa.com",
+    "DIGEST_TO": "sarah_arissa@hotmail.co.uk"
+  },
+  "send_email": [
+    { "name": "DIGEST", "destination_address": "sarah_arissa@hotmail.co.uk" }
+  ],
+  "observability": { "enabled": true }
+}

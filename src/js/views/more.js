@@ -2,7 +2,8 @@ import { state, SCHEMA_VERSION, hasSampleData } from '../store.js';
 import { esc } from '../util.js';
 import { icon } from '../ui.js';
 import { isPersistentStorage } from '../db.js';
-import { PROVIDERS } from '../sync.js';
+import { PROVIDERS, syncState } from '../sync.js';
+import { syncStatusHtml } from '../sync-ui.js';
 
 export const title = 'More';
 export const APP_VERSION = '1.1.0';
@@ -27,7 +28,7 @@ export function render() {
   <section class="card"><header class="card-head"><h3>Appearance</h3></header>
     <div class="seg" role="radiogroup">${[['system', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([k, l]) => `<label><input type="radio" name="theme" value="${k}" data-setting ${S.theme === k ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div></section>
   <section class="card" id="data"><header class="card-head"><h3>Data & backup</h3><small class="muted">${counts}</small></header>
-    <p class="muted small">${icon('info')} Your data lives only on this device${isPersistentStorage() ? '' : ' <b class="overdue">(temporary storage – private browsing?)</b>'}. <b>Back up now</b> opens the share sheet on iPad – choose <b>Save to Files</b> → iCloud Drive. To restore, pick that file with <b>Restore from backup</b>.${S.lastBackupAt ? ` Last backup: ${esc(new Date(S.lastBackupAt).toLocaleString('en-GB'))}.` : ' <b>No backup yet.</b>'}</p>
+    <p class="muted small">${icon('info')} ${syncState.mode === 'cloudflare' ? 'Your data lives on this device and syncs to your private MentorFlow cloud (see Sync below)' : 'Your data lives only on this device'}${isPersistentStorage() ? '' : ' <b class="overdue">(temporary storage – private browsing?)</b>'}. <b>Back up now</b> opens the share sheet on iPad – choose <b>Save to Files</b> → iCloud Drive. To restore, pick that file with <b>Restore from backup</b>.${S.lastBackupAt ? ` Last backup: ${esc(new Date(S.lastBackupAt).toLocaleString('en-GB'))}.` : ' <b>No backup yet.</b>'}</p>
     <div class="btn-grid">
       <button class="btn primary" data-action="backup-export">${icon('download')} Back up now</button>
       <label class="btn">${icon('upload')} Restore from backup<input type="file" accept="application/json,.json" data-change="backup-import" hidden></label>
@@ -39,9 +40,9 @@ export function render() {
     <label class="check"><input type="checkbox" name="calendarAlarm" data-setting ${S.calendarAlarm ? 'checked' : ''} data-testid="calendar-alarm"> Add a 30-minute reminder to exported lessons</label>
     <p class="muted small">Off by default – TimeTree already reminds you. ${S.lastCalendarExportAt ? `Last added to Calendar: ${esc(new Date(S.lastCalendarExportAt).toLocaleString('en-GB'))}.` : 'Nothing added to Calendar yet.'}</p>
     <div class="btn-row"><button class="btn" data-action="calendar-export-upcoming" data-testid="calendar-export-upcoming">${icon('calCheck')} Export all upcoming lessons to Calendar</button></div></section>
-  <section class="card"><header class="card-head"><h3>Sync</h3></header>
-    <label class="field"><span>Sync provider</span><select name="syncProvider" data-setting>${Object.entries(PROVIDERS).map(([k, P]) => { const p = new P(); return `<option value="${k}" ${S.syncProvider === k ? 'selected' : ''} ${p.available ? '' : 'disabled'}>${esc(p.label)}</option>`; }).join('')}</select></label>
-    <p class="muted small">Notion sync is planned. Until then MentorFlow is local-only: use JSON backup to move data between iPad and PC.</p></section>
+  <section class="card" id="sync"><header class="card-head"><h3>Sync</h3></header>
+    <label class="field"><span>Sync provider</span><select name="syncProvider" data-setting>${Object.entries(PROVIDERS).map(([k, P]) => { const p = new P(); const sel = k === (S.syncProvider === 'notion' ? 'notion' : S.syncProvider === 'off' || !syncState.serverPresent ? 'off' : 'cloudflare'); const ok = k === 'cloudflare' ? !!syncState.serverPresent : p.available; return `<option value="${k}" ${sel ? 'selected' : ''} ${ok ? '' : 'disabled'}>${esc(p.label)}</option>`; }).join('')}</select></label>
+    ${syncStatusHtml()}</section>
   <section class="card"><header class="card-head"><h3>Install on iPad</h3></header>
     <p class="small">${standalone ? '✅ Running as an installed app.' : 'Open this page in <b>Safari</b>, tap <b>Share</b> → <b>Add to Home Screen</b>. MentorFlow then opens full-screen and works offline.'}</p>
     <p class="small muted">On Windows, use Edge or Chrome → ⋯ → <b>Apps → Install this site as an app</b>.</p></section>

@@ -4,9 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node tests/parser.test.mjs && node tests/calendar.test.mjs && node tests/e2e.mjs all",
+    "test": "npm run test:unit && node tests/e2e.mjs all && node tests/sync-e2e.mjs all",
+    "test:unit": "node tests/parser.test.mjs && node tests/calendar.test.mjs && node tests/worker.test.mjs && node tests/sync.test.mjs && node tests/digest.test.mjs",
     "build": "node build.mjs",
-    "serve": "python3 -m http.server 8080 -d dist"
+    "serve": "python3 -m http.server 8080 -d dist",
+    "dev": "node build.mjs && wrangler dev",
+    "deploy": "node build.mjs && wrangler d1 migrations apply mentorflow-db --remote && wrangler deploy"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +18,8 @@
   "devDependencies": {
     "ical.js": "^2.2.1",
     "jspdf": "^4.2.1",
-    "playwright": "^1.64.1"
+    "miniflare": "^4.20260426.0",
+    "playwright": "^1.64.1",
+    "wrangler": "^4.86.0"
   }
 }

@@ -1,5 +1,8 @@
 import { state, load, subscribe, saveSession, saveTask, saveSettings, setChecklist, loadSampleData, clearSampleData, hasSampleData, eraseAll, exportBackup, importBackup, validateBackup, studentById, studentName, sessionValue, INVOICE_METHODS, SESSION_STATUS, expensesInMonth } from './store.js';
+import * as db from './db.js';
 import { requestPersistence } from './db.js';
+import { getProvider, detectServer, syncOnce, syncState, setSyncState, onSyncState, NeedsLoginError } from './sync.js';
+import { updateSyncDom } from './sync-ui.js';
 import { esc, money, fmtDate, todayStr, ym, addMonths, download, copyText, toCsv, debounce, fmtMonth } from './util.js';
 import { icon, openSheet, closeSheet, sheetHeader, sheetOpen, toast, confirmDialog, avatar } from './ui.js';
 import { ui, setUi } from './uistate.js';
@@ -143,8 +146,10 @@ const ACTIONS = {
     if (!(await confirmDialog('Remove all sample students, sessions, tasks and expenses (and the placeholder profile)? Your own records are kept.', { confirmText: 'Clear sample data', title: 'Clear sample data?' }))) return;
     const n = await clearSampleData(); toast(`Removed ${n} sample records`, { type: 'ok' });
   },
+  'sync-login': () => { location.href = './api/login'; },
+  'sync-now': () => { runSync('manual', { announce: true }); },
   'erase-all': async () => {
-    if (!(await confirmDialog('This permanently deletes every student, session, task, expense and setting on this device. Export a backup first if you might need it.', { confirmText: 'Erase everything', danger: true, title: 'Erase all data?' }))) return;
+    if (!(await confirmDialog('This permanently deletes every student, session, task, expense and setting on this device. Export a backup first if you might need it.' + (syncState.mode === 'cloudflare' ? ' Your synced copy in the MentorFlow cloud is kept and will download again the next time this device syncs.' : ''), { confirmText: 'Erase everything', danger: true, title: 'Erase all data?' }))) return;
     await eraseAll(); applyTheme(); toast('All data erased'); go('#/today');
   },
 };
@@ -210,6 +215,7 @@ const saveSettingField = (el) => {
   let v = el.type === 'checkbox' ? el.checked : el.value;
   if (el.type === 'number') v = el.value === '' ? '' : +el.value;
   saveSettings({ [el.name]: v }); if (el.name === 'theme') applyTheme();
+  if (el.name === 'syncProvider') applySyncChoice();
 };
 const debouncedSetting = debounce(saveSettingField, 500);
 document.addEventListener('input', (e) => {
@@ -275,6 +281,54 @@ document.addEventListener('keydown', (e) => {
 });
 function monthKeyShift(n) { const key = { sessions: 'month', money: 'moneyMonth', expenses: 'expMonth' }[parseHash().key]; if (key) shiftMonth(key, n); }
 
+// ---------- Cloudflare sync ----------
+// Only active when this copy is served by the MentorFlow Worker (detected at runtime); on GitHub Pages it stays off.
+let provider = null; let syncing = null; let lastAuto = 0;
+const SERVER_KEY = 'mentorflow-sync-server';
+async function initSync() {
+  const det = await detectServer();
+  let present = det.present;
+  try { if (present) localStorage.setItem(SERVER_KEY, '1'); else if (!navigator.onLine && localStorage.getItem(SERVER_KEY) === '1') present = true; } catch {}
+  provider = getProvider(state.settings, { serverPresent: present });
+  setSyncState({ serverPresent: present, mode: provider.id, status: provider.id === 'cloudflare' && present && !det.signedIn && navigator.onLine ? 'needs-login' : syncState.status });
+  if (!present) return;
+  db.onLocalWrite(debounce(() => runSync('change'), 3000));
+  window.addEventListener('online', () => runSync('online'));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastAuto > 60e3) runSync('visible'); });
+  setInterval(() => { if (document.visibilityState === 'visible') runSync('timer'); }, 5 * 60e3);
+  if (provider.id === 'cloudflare' && (det.signedIn || !navigator.onLine)) runSync('boot');
+}
+function applySyncChoice() {
+  if (!syncState.serverPresent) return;
+  provider = getProvider(state.settings, { serverPresent: true });
+  setSyncState({ mode: provider.id, status: 'idle' });
+  render();
+  runSync('choice');
+}
+function runSync(reason, { announce = false } = {}) {
+  if (!provider || provider.id !== 'cloudflare') return Promise.resolve();
+  if (syncing) return syncing;
+  lastAuto = Date.now();
+  if (!navigator.onLine) { setSyncState({ status: 'offline' }); return Promise.resolve(); }
+  setSyncState({ status: 'syncing', message: '' });
+  syncing = (async () => {
+    try {
+      const r = await syncOnce(db, provider);
+      if (r.changed) await load();
+      setSyncState({ status: 'ok', lastSyncAt: new Date().toISOString(), message: '' });
+      if (announce) toast(r.changed ? `Synced · ${r.changed} update${r.changed === 1 ? '' : 's'} from your other devices` : 'Everything is synced', { type: 'ok' });
+    } catch (e) {
+      if (e instanceof NeedsLoginError) setSyncState({ status: 'needs-login' });
+      else if (e.offline) setSyncState({ status: 'offline' });
+      else { console.warn('Sync failed', e); setSyncState({ status: 'error', message: e.message }); }
+      if (announce) toast(e instanceof NeedsLoginError ? 'Please sign in to sync' : 'Sync did not work: ' + e.message, { type: 'warn' });
+    } finally { syncing = null; }
+  })();
+  return syncing;
+}
+onSyncState(() => updateSyncDom());
+window.__mentorflowSync = { runSync, syncState };
+
 // ---------- boot ----------
 subscribe(() => { applyTheme(); if (suppressRender) { suppressRender = false; return; } render(); });
 window.addEventListener('hashchange', render);
@@ -285,6 +339,7 @@ async function boot() {
   applyTheme(); render();
   document.documentElement.classList.add('ready');
   requestPersistence();
+  initSync().catch(e => console.warn('Sync init failed', e));
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('./sw.js').then(reg => {
       reg.addEventListener('updatefound', () => {

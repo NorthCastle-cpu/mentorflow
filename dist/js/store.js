@@ -4,11 +4,8 @@ import { uid, todayStr, ym, ymd, addDays, parseYmd, round2, timeToMins, addMonth
 
 export const SCHEMA_VERSION = 2;
 
-export const INVOICE_METHODS = {
-  guidewell: { key: 'guidewell', label: 'Guidewell', short: 'GW', desc: 'Agency · monthly PDF invoice', color: '#0d9488' },
-  luba:      { key: 'luba', label: 'Luba Jones', short: 'LJ', desc: 'Agency · monthly hours CSV', color: '#7c3aed' },
-  direct:    { key: 'direct', label: 'Direct (parent)', short: 'D', desc: 'Email parent with bank details', color: '#ea580c' },
-};
+import { INVOICE_METHODS, sortSessions } from './constants.js';
+export { INVOICE_METHODS, sortSessions };
 
 export const SESSION_STATUS = {
   scheduled:   { label: 'Scheduled', billable: false, forecast: true },
@@ -115,7 +112,8 @@ export function deleteStudent(id) {
   const sess = state.sessions.filter(s => s.studentId === id);
   sess.forEach(s => db.del('sessions', s.id));
   state.sessions = state.sessions.filter(s => s.studentId !== id);
-  state.tasks.filter(t => t.studentId === id).forEach(t => { t.studentId = null; db.put('tasks', t); });
+  const now = new Date().toISOString();
+  state.tasks.filter(t => t.studentId === id).forEach(t => { t.studentId = null; t.updatedAt = now; db.put('tasks', t); });
   remove('students', id);
 }
 
@@ -128,8 +126,17 @@ export function addSessionsBulk(list) {
   return recs;
 }
 
+// Settings sync field-by-field (newest edit of each field wins), so every change records a per-field time.
+// Fields never edited on this device carry no time and are never pushed (a new device can't overwrite with defaults).
+export const SETTINGS_INTERNAL = new Set(['id', 'updatedAt', '_fieldTimes']);
+export function stampSettings(settings, keys, at = new Date().toISOString()) {
+  const times = { ...(settings._fieldTimes || {}) };
+  for (const k of keys) if (!SETTINGS_INTERNAL.has(k)) times[k] = at;
+  return { ...settings, _fieldTimes: times, updatedAt: at };
+}
 export function saveSettings(patch) {
-  state.settings = { ...state.settings, ...patch, id: 'settings' };
+  const changed = Object.keys(patch).filter(k => state.settings[k] !== patch[k]);
+  state.settings = stampSettings({ ...state.settings, ...patch, id: 'settings' }, changed);
   db.put('meta', state.settings).catch(console.error);
   emit();
 }
@@ -137,7 +144,7 @@ export function saveSettings(patch) {
 export function setChecklist(month, key, value) {
   const items = { ...(state.checklists[month] || {}), [key]: value };
   state.checklists[month] = items;
-  db.put('meta', { id: 'checklist-' + month, items }).catch(console.error);
+  db.put('meta', { id: 'checklist-' + month, items, updatedAt: new Date().toISOString() }).catch(console.error);
   emit();
 }
 
@@ -150,7 +157,6 @@ export const sessionRate = (s) => {
 };
 export const sessionValue = (s) => round2(sessionRate(s) * (+s.duration || 0) / 60);
 export const sessionMethod = (s) => studentById(s.studentId)?.invoiceMethod || 'direct';
-export const sortSessions = (a, b) => (a.date + a.start).localeCompare(b.date + b.start);
 export const sessionsInMonth = (month) => state.sessions.filter(s => s.date.startsWith(month)).sort(sortSessions);
 export const sessionsOn = (date) => state.sessions.filter(s => s.date === date).sort(sortSessions);
 
@@ -235,11 +241,15 @@ export async function importBackup(data, mode = 'replace') {
     if (coll === 'sessions') migrateSessions(state.sessions);
     await db.putMany(coll, state[coll]);
   }
-  if (mode === 'replace' || !state.settings.onboarded) state.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}), id: 'settings' };
+  if (mode === 'replace' || !state.settings.onboarded) {
+    // A restore is a deliberate choice: stamp every restored setting as "edited now" so it syncs.
+    const restored = { ...DEFAULT_SETTINGS, ...(data.settings || {}), id: 'settings' };
+    state.settings = stampSettings(restored, Object.keys(data.settings || {}));
+  }
   await db.put('meta', state.settings);
   for (const [m, items] of Object.entries(data.checklists || {})) {
     state.checklists[m] = { ...(mode === 'replace' ? {} : state.checklists[m] || {}), ...items };
-    await db.put('meta', { id: 'checklist-' + m, items: state.checklists[m] });
+    await db.put('meta', { id: 'checklist-' + m, items: state.checklists[m], updatedAt: new Date().toISOString() });
   }
   emit();
 }
@@ -323,7 +333,8 @@ export async function clearSampleData() {
     state[coll] = state[coll].filter(x => !ids.has(x.id));
     await Promise.all(list.map(x => db.del(coll, x.id)));
   }
-  state.tasks.filter(t => sampleStudentIds.has(t.studentId)).forEach(t => { t.studentId = null; db.put('tasks', t); });
+  const now = new Date().toISOString();
+  state.tasks.filter(t => sampleStudentIds.has(t.studentId)).forEach(t => { t.studentId = null; t.updatedAt = now; db.put('tasks', t); });
   if (state.settings.sampleSettingsApplied) {
     const patch = { sampleSettingsApplied: false };
     for (const [k, v] of Object.entries(SAMPLE_SETTINGS)) if (k !== 'onboarded' && state.settings[k] === v) patch[k] = DEFAULT_SETTINGS[k];

@@ -14,6 +14,8 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
+  // Never cache or intercept the sync API or Cloudflare Access endpoints (sign-in redirects must reach the network).
+  if (/\/(api|cdn-cgi)\//.test(url.pathname)) return;
   if (req.mode === 'navigate') {
     // App shell: always answer navigations with cached index.html (offline-safe), refresh in background.
     e.respondWith(caches.match('./index.html', { ignoreSearch: true }).then(cached => {
