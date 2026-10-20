@@ -55,13 +55,13 @@ async function run(type, launcher) {
   });
   await step('all local data (students, sessions, tasks, expenses, settings) reaches D1', async () => {
     const n = await ipad.page.evaluate(() => window.__mentorflow.state.sessions.length);
-    assert.equal(await count('sessions'), n); assert.equal(await count('students'), 5); assert.ok(await count('tasks') >= 10); assert.ok(await count('expenses') >= 6);
+    assert.equal(await count('sessions'), n); assert.equal(await count('students'), 6); /* 5 sample students + 1 sample school course */ assert.ok(await count('tasks') >= 10); assert.ok(await count('expenses') >= 6);
     assert.ok(await count('settings') >= 5, 'settings fields synced');
   });
   const pc = await mkDevice({ signedIn: true });
   await step('second device pulls everything on first open', async () => {
     await pc.page.goto(BASE);
-    await pc.page.waitForFunction(() => window.__mentorflowSync?.syncState.status === 'ok' && window.__mentorflow.state.students.length === 5, null, { timeout: 15000 });
+    await pc.page.waitForFunction(() => window.__mentorflowSync?.syncState.status === 'ok' && window.__mentorflow.state.students.length === 6, null, { timeout: 15000 });
     const [a, b] = await Promise.all([ipad, pc].map(d => d.page.evaluate(() => window.__mentorflow.state.sessions.length)));
     assert.equal(a, b);
     assert.equal(await pc.page.evaluate(() => window.__mentorflow.state.settings.yourName), 'Sample Tutor');

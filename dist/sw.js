@@ -1,5 +1,5 @@
 // MentorFlow service worker: precache the app shell, serve cache-first, works from any subpath.
-const VERSION = 'b489cabd8d';
+const VERSION = '45699ff75e';
 const CACHE = 'mentorflow-' + VERSION;
 const ASSETS = [
   "./",
@@ -12,15 +12,21 @@ const ASSETS = [
   "./icons/maskable-512.png",
   "./index.html",
   "./js/app.js",
+  "./js/billing.js",
   "./js/calendar-ui.js",
   "./js/calendar.js",
   "./js/charts.js",
   "./js/constants.js",
   "./js/db.js",
+  "./js/docx.js",
   "./js/export.js",
   "./js/forms.js",
   "./js/ics.js",
+  "./js/invoice-pdf.js",
+  "./js/invoice-ui.js",
+  "./js/invoice.js",
   "./js/parser.js",
+  "./js/payreq.js",
   "./js/store.js",
   "./js/sync-ui.js",
   "./js/sync.js",

@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "npm run test:unit && node tests/e2e.mjs all && node tests/sync-e2e.mjs all",
-    "test:unit": "node tests/parser.test.mjs && node tests/calendar.test.mjs && node tests/worker.test.mjs && node tests/sync.test.mjs && node tests/digest.test.mjs",
+    "test": "npm run test:unit && node tests/e2e.mjs all && node tests/sync-e2e.mjs all && node tests/invoice-e2e.mjs all",
+    "test:unit": "node tests/parser.test.mjs && node tests/calendar.test.mjs && node tests/worker.test.mjs && node tests/sync.test.mjs && node tests/digest.test.mjs && node tests/invoice.test.mjs",
     "build": "node build.mjs",
     "serve": "python3 -m http.server 8080 -d dist",
     "dev": "node build.mjs && wrangler dev",

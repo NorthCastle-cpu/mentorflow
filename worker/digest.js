@@ -43,7 +43,7 @@ export function buildDigest({ sessions, students, now = new Date(), londonDate =
   const lines = list.map(s => {
     const st = studentById(s.studentId);
     const cancelled = s.status === 'cancelled' || s.status === 'late_cancel';
-    return `• ${niceDate(s.date)} ${s.start}–${endTime(s.start, s.duration)}  ${st?.name || 'Lesson'}${st?.subject ? ' – ' + st.subject : ''}${cancelled ? ' (cancelled)' : ''}`;
+    return `• ${niceDate(s.date)} ${s.start}–${endTime(s.start, s.duration)}  ${st?.name || 'Lesson'} – ${(s.subject || '').trim() || st?.subject || 'Tutoring'}${cancelled ? ' (cancelled)' : ''}`;
   });
   const text = [`Hi Sarah,`, '', `${n === 1 ? 'One lesson was' : n + ' lessons were'} added or changed in MentorFlow since the last email:`, '', ...lines, '',
     `Open the attached calendar file (${filename}) and tap “Add All” to put ${n === 1 ? 'it' : 'them'} in your calendar.`,

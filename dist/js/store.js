@@ -5,12 +5,16 @@ import { uid, todayStr, ym, ymd, addDays, parseYmd, round2, timeToMins, addMonth
 export const SCHEMA_VERSION = 2;
 
 import { INVOICE_METHODS, sortSessions } from './constants.js';
+import { billedMins, isBilled } from './billing.js';
+import { DEFAULT_PAYMENT_TEMPLATE, DEFAULT_PAYMENT_SUBJECT, BANK_PLACEHOLDER } from './payreq.js';
+import { invoiceRecordId } from './invoice.js';
 export { INVOICE_METHODS, sortSessions };
 
 export const SESSION_STATUS = {
   scheduled:   { label: 'Scheduled', billable: false, forecast: true },
   completed:   { label: 'Completed', billable: true, forecast: true },
   late_cancel: { label: 'Late cancel (charged)', billable: true, forecast: true },
+  no_show:     { label: 'No-show (charged)', billable: true, forecast: true },
   cancelled:   { label: 'Cancelled', billable: false, forecast: false },
 };
 
@@ -25,10 +29,13 @@ export const LABEL_COLORS = [
 export const DEFAULT_SETTINGS = {
   id: 'settings',
   yourName: '', businessName: '', address: '', email: '', phone: '',
-  bankAccountName: '', bankSortCode: '', bankAccountNumber: '',
   defaultRate: 40, defaultDuration: 60, monthlyTarget: 2000,
-  guidewellEmail: '', guidewellRef: '', lubaEmail: '',
-  invoicePrefix: 'MF-', nextInvoiceNumber: 1, paymentTermsDays: 14,
+  guidewellEmail: '', lubaEmail: '',
+  // Guidewell invoice (all editable in More → Guidewell invoice; nothing real is hard-coded)
+  guidewellBillTo: '', guidewellRate: 75, adminRate: 20, lessonAdminMins: 5,
+  invoiceFooter: `Please pay within 15 days from the date of this invoice.\nPlease pay by bank transfer to:\n${BANK_PLACEHOLDER}\nReference: Tutor Invoice`,
+  // Direct-parent payment request email (editable template with {placeholders})
+  paymentEmailSubject: DEFAULT_PAYMENT_SUBJECT, paymentEmailTemplate: DEFAULT_PAYMENT_TEMPLATE,
   theme: 'system', weekStartsMonday: true,
   syncProvider: 'local', notionToken: '', notionDatabaseId: '',
   calendarAlarm: false, calendarRange: 'today', lastCalendarExportAt: '',
@@ -39,6 +46,7 @@ export const state = {
   students: [], sessions: [], tasks: [], expenses: [],
   settings: { ...DEFAULT_SETTINGS },
   checklists: {}, // 'YYYY-MM' -> { key: bool }
+  invoices: {},   // 'YYYY-MM' -> Guidewell invoice record (number, date, extra lines); synced as meta 'gwinv-YYYY-MM'
   ready: false,
 };
 
@@ -54,6 +62,8 @@ export async function load() {
   state.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
   state.checklists = {};
   meta.filter(m => m.id.startsWith('checklist-')).forEach(m => state.checklists[m.id.slice(10)] = m.items || {});
+  state.invoices = {};
+  meta.filter(m => m.id.startsWith('gwinv-')).forEach(m => state.invoices[m.id.slice(6)] = m);
   state.ready = true;
   emit();
 }
@@ -141,6 +151,15 @@ export function saveSettings(patch) {
   emit();
 }
 
+/** Guidewell invoice record for a month (number, date, lesson count override, extra admin / schools lines). */
+export function saveInvoiceRecord(month, patch) {
+  const rec = { lines: [], ...(state.invoices[month] || {}), ...patch, id: invoiceRecordId(month), month, updatedAt: new Date().toISOString() };
+  state.invoices[month] = rec;
+  db.put('meta', rec).catch(console.error);
+  emit();
+  return rec;
+}
+
 export function setChecklist(month, key, value) {
   const items = { ...(state.checklists[month] || {}), [key]: value };
   state.checklists[month] = items;
@@ -151,11 +170,15 @@ export function setChecklist(month, key, value) {
 // ---------- derived ----------
 export const studentById = (id) => state.students.find(s => s.id === id);
 export const studentName = (id) => studentById(id)?.name || 'Unknown student';
+const setNum = (v, d) => (v === '' || v == null || isNaN(+v)) ? d : +v;
+const methodDefaultRate = (st) => st?.invoiceMethod === 'guidewell' ? setNum(state.settings.guidewellRate, 75) : state.settings.defaultRate;
 export const sessionRate = (s) => {
   const st = studentById(s.studentId);
-  return +(s.rate ?? st?.rate ?? state.settings.defaultRate) || 0;
+  return setNum(s.rate, setNum(st?.rate, setNum(methodDefaultRate(st), 0)));
 };
-export const sessionValue = (s) => round2(sessionRate(s) * (+s.duration || 0) / 60);
+// Billing rounds every session to the nearest 15 minutes (see billing.js).
+export const sessionValue = (s) => round2(sessionRate(s) * billedMins(s) / 60);
+export const sessionBilled = (s) => isBilled(s);
 export const sessionMethod = (s) => studentById(s.studentId)?.invoiceMethod || 'direct';
 export const sessionsInMonth = (month) => state.sessions.filter(s => s.date.startsWith(month)).sort(sortSessions);
 export const sessionsOn = (date) => state.sessions.filter(s => s.date === date).sort(sortSessions);
@@ -178,8 +201,8 @@ export function monthStats(month) {
   for (const s of sessions) {
     const st = SESSION_STATUS[s.status] || SESSION_STATUS.scheduled;
     const v = sessionValue(s); const m = sessionMethod(s);
-    if (st.billable) { actual += v; actualMins += +s.duration || 0; byMethod[m].actual += v; byMethod[m].mins += +s.duration || 0; byMethod[m].count++; }
-    if (st.forecast) { forecast += v; byMethod[m].forecast += v; }
+    if (st.billable && !s.noBill) { actual += v; actualMins += billedMins(s); byMethod[m].actual += v; byMethod[m].mins += billedMins(s); byMethod[m].count++; }
+    if (st.forecast && !s.noBill) { forecast += v; byMethod[m].forecast += v; }
     if (s.status === 'scheduled') scheduledCount++;
     if (s.status === 'completed') completedCount++;
     if (s.status === 'cancelled') cancelledCount++;
@@ -195,27 +218,21 @@ export function monthStats(month) {
 export function billableByStudent(month, method) {
   const map = new Map();
   for (const s of sessionsInMonth(month)) {
-    if (!SESSION_STATUS[s.status]?.billable) continue;
+    if (!SESSION_STATUS[s.status]?.billable || s.noBill) continue;
     if (method && sessionMethod(s) !== method) continue;
     if (!map.has(s.studentId)) map.set(s.studentId, { student: studentById(s.studentId), sessions: [], mins: 0, total: 0 });
-    const e = map.get(s.studentId); e.sessions.push(s); e.mins += +s.duration || 0; e.total = round2(e.total + sessionValue(s));
+    const e = map.get(s.studentId); e.sessions.push(s); e.mins += billedMins(s); e.total = round2(e.total + sessionValue(s));
   }
   return [...map.values()].sort((a, b) => (a.student?.name || '').localeCompare(b.student?.name || ''));
 }
 
-export function nextInvoiceNumber(consume = false) {
-  const n = +state.settings.nextInvoiceNumber || 1;
-  const num = `${state.settings.invoicePrefix || ''}${String(n).padStart(4, '0')}`;
-  if (consume) saveSettings({ nextInvoiceNumber: n + 1 });
-  return num;
-}
 
 // ---------- backup ----------
 export function exportBackup() {
   return {
     app: 'MentorFlow', schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(),
     students: state.students, sessions: state.sessions, tasks: state.tasks, expenses: state.expenses,
-    settings: state.settings, checklists: state.checklists,
+    settings: state.settings, checklists: state.checklists, invoices: state.invoices,
   };
 }
 
@@ -228,7 +245,7 @@ export function validateBackup(data) {
 
 export async function importBackup(data, mode = 'replace') {
   validateBackup(data);
-  if (mode === 'replace') await db.clearAll();
+  if (mode === 'replace') { await db.clearAll(); state.invoices = {}; }
   const merge = (coll) => {
     const incoming = data[coll].filter(x => x && x.id);
     if (mode === 'replace') return incoming;
@@ -251,13 +268,17 @@ export async function importBackup(data, mode = 'replace') {
     state.checklists[m] = { ...(mode === 'replace' ? {} : state.checklists[m] || {}), ...items };
     await db.put('meta', { id: 'checklist-' + m, items: state.checklists[m], updatedAt: new Date().toISOString() });
   }
+  for (const [m, rec] of Object.entries(data.invoices || {})) {
+    const cur = state.invoices[m];
+    if (mode === 'replace' || !cur || (rec.updatedAt || '') >= (cur.updatedAt || '')) { state.invoices[m] = { ...rec, id: invoiceRecordId(m), month: m }; await db.put('meta', state.invoices[m]); }
+  }
   emit();
 }
 
 export async function eraseAll() {
   await db.clearAll();
   state.students = []; state.sessions = []; state.tasks = []; state.expenses = [];
-  state.settings = { ...DEFAULT_SETTINGS }; state.checklists = {};
+  state.settings = { ...DEFAULT_SETTINGS }; state.checklists = {}; state.invoices = {};
   emit();
 }
 
@@ -265,11 +286,12 @@ export async function eraseAll() {
 export async function loadSampleData() {
   const today = new Date();
   const students = [
-    { name: 'Sample Student A', subject: 'GCSE Maths', invoiceMethod: 'guidewell', rate: 38, parentName: 'Sample Parent A', parentEmail: 'parent.a@example.com', label: 'Student A', labelColor: 'emerald', defaultDay: 1, defaultTime: '16:00' },
-    { name: 'Sample Student B', subject: 'KS3 English', invoiceMethod: 'guidewell', rate: 38, parentName: 'Sample Parent B', parentEmail: 'parent.b@example.com', label: 'Student B', labelColor: 'sky', defaultDay: 3, defaultTime: '17:00' },
-    { name: 'Sample Student C', subject: 'A-level Biology', invoiceMethod: 'luba', rate: 45, parentName: 'Sample Parent C', parentEmail: 'parent.c@example.com', label: 'Student C', labelColor: 'violet', defaultDay: 2, defaultTime: '18:00' },
-    { name: 'Sample Student D', subject: 'Study skills mentoring', invoiceMethod: 'luba', rate: 42, parentName: 'Sample Parent D', parentEmail: 'parent.d@example.com', label: 'Student D', labelColor: 'rose', defaultDay: 4, defaultTime: '15:30' },
-    { name: 'Sample Student E', subject: '11+ prep', invoiceMethod: 'direct', rate: 50, parentName: 'Sample Parent E', parentEmail: 'parent.e@example.com', label: 'Student E', labelColor: 'amber', defaultDay: 6, defaultTime: '10:00' },
+    { name: 'Sample Student A', subject: 'GCSE Maths', invoiceMethod: 'guidewell', rate: null, parentName: 'Sample Parent A', parentEmail: 'parent.a@example.com', labelColor: 'emerald', defaultDay: 1, defaultTime: '16:00' },
+    { name: 'Sample Student B', subject: 'KS3 English', invoiceMethod: 'guidewell', rate: null, parentName: 'Sample Parent B', parentEmail: 'parent.b@example.com', labelColor: 'sky', defaultDay: 3, defaultTime: '17:00' },
+    { name: 'Sample Student C', subject: 'A-level Biology', invoiceMethod: 'luba', rate: 45, parentName: 'Sample Parent C', parentEmail: 'parent.c@example.com', labelColor: 'violet', defaultDay: 2, defaultTime: '18:00' },
+    { name: 'Sample Student D', subject: 'Study skills mentoring', invoiceMethod: 'luba', rate: 42, parentName: 'Sample Parent D', parentEmail: 'parent.d@example.com', labelColor: 'rose', defaultDay: 4, defaultTime: '15:30' },
+    { name: 'Sample Student E', subject: '11+ prep', invoiceMethod: 'direct', rate: 50, parentName: 'Sample Parent E', parentEmail: 'parent.e@example.com', labelColor: 'amber', defaultDay: 6, defaultTime: '10:00' },
+    { name: 'Sample School SAT Course', subject: 'Autumn term', invoiceMethod: 'guidewell', schoolCourse: true, rate: 65, parentName: '', parentEmail: '', labelColor: 'indigo', defaultDay: 5, defaultTime: '14:00' },
   ].map(s => ({ ...s, id: uid(), sample: true, active: true, notes: 'Fictional sample student.', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }));
   const sessions = [];
   const start = new Date(today.getFullYear(), today.getMonth() - 2, 1);
@@ -314,8 +336,10 @@ export async function loadSampleData() {
 // Clearly fictional placeholder profile used only with sample data.
 export const SAMPLE_SETTINGS = {
   yourName: 'Sample Tutor', businessName: 'Sample Tutoring (demo)', email: 'tutor@example.com', phone: '',
-  address: '1 Example Street\nExampletown EX1 1AA', bankAccountName: 'SAMPLE TUTOR', bankSortCode: '00-00-00', bankAccountNumber: '00000000',
-  guidewellEmail: 'invoices@example.com', lubaEmail: 'hours@example.com', guidewellRef: 'DEMO-000', onboarded: true,
+  address: '1 Example Street\nExampletown EX1 1AA',
+  guidewellEmail: 'invoices@example.com', lubaEmail: 'hours@example.com', onboarded: true,
+  guidewellBillTo: 'Sample Agency Ltd (demo)\nCompany no.: 00000000',
+  invoiceFooter: 'Please pay within 15 days from the date of this invoice.\nPlease pay by bank transfer to:\nAccount name: SAMPLE TUTOR\nAccount number: 00000000\nSort code: 00-00-00\nReference: Tutor Invoice',
 };
 
 export const hasSampleData = () => state.students.some(s => s.sample) || state.sessions.some(s => s.source === 'sample') || state.tasks.some(t => t.sample) || state.expenses.some(e => e.sample);

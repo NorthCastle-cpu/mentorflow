@@ -11,7 +11,7 @@ function listHtml(selectedId) {
   const q = (ui.studentQuery || '').toLowerCase();
   const f = ui.studentFilter || 'active';
   let list = state.students.filter(s => f === 'all' ? true : f === 'inactive' ? s.active === false : f in INVOICE_METHODS ? s.invoiceMethod === f && s.active !== false : s.active !== false);
-  if (q) list = list.filter(s => [s.name, s.subject, s.parentName, s.label].join(' ').toLowerCase().includes(q));
+  if (q) list = list.filter(s => [s.name, s.subject, s.parentName].join(' ').toLowerCase().includes(q));
   list.sort((a, b) => a.name.localeCompare(b.name));
   const month = ym(new Date());
   const filters = [['active', 'Active'], ['guidewell', 'Guidewell'], ['luba', 'Luba Jones'], ['direct', 'Direct'], ['inactive', 'Inactive'], ['all', 'All']];
@@ -58,8 +58,8 @@ function detailHtml(s) {
         <section class="card"><header class="card-head"><h3>Contact & notes</h3></header>
           <dl class="dl"><dt>Parent</dt><dd>${esc(s.parentName || '—')}</dd>
           <dt>Email</dt><dd>${s.parentEmail ? `<a href="mailto:${esc(s.parentEmail)}">${esc(s.parentEmail)}</a>` : '—'}</dd>
-          <dt>Phone</dt><dd>${s.parentPhone ? `<a href="tel:${esc(s.parentPhone)}">${esc(s.parentPhone)}</a>` : '—'}</dd>
-          <dt>TimeTree label</dt><dd>${s.label ? `<span class="lbl-dot" style="--lbl:${labelHex(s.labelColor)}"></span>${esc(s.label)}` : '<span class="muted">Not set – uses name</span>'}</dd></dl>
+          <dt>Phone</dt><dd>${s.parentPhone ? `<a href="tel:${esc(s.parentPhone)}">${esc(s.parentPhone)}</a>` : '—'}</dd>${s.schoolCourse ? `
+          <dt>Invoice</dt><dd>School / group course</dd>` : ''}</dl>
           ${s.notes ? `<p class="notes">${esc(s.notes).replace(/\n/g, '<br>')}</p>` : ''}</section>
       </div>
     </div></div>`;

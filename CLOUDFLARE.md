@@ -26,8 +26,9 @@ Branch `cloudflare`. GitHub Pages (`main`) keeps working unchanged until you dec
   newer and returns any newer server copies. `GET /api/changes?since=<seq>` pages through changes using a server-assigned
   sequence number. Settings sync one field at a time.
   **Everything syncs** (students, sessions, tasks, money/expenses, checklists, settings) **except** the Notion token and the
-  per-device "sync on/off" choice. Note that the settings include the invoice bank-detail fields (account name, sort code,
-  account number). They are synced too, so they are stored in D1 if they are filled in.
+  per-device "sync on/off" choice. Note that the *Invoice footer / payment details* setting and the payment request email template
+  hold Sarah’s bank details once she fills them in; they sync too, so they are stored in her private D1 database (behind Access).
+  Guidewell invoice records (number, date, extra lines) sync as meta `gwinv-YYYY-MM`.
 * The app only turns sync on when it is served by this Worker (it checks `/api/session`). On GitHub Pages it stays local-only.
 * If the Access session has expired, the app shows **Sign in to sync** (on Today and in More › Sync). It opens
   `./api/login` → Access login → back to the app. The service worker never caches or intercepts `/api/` or `/cdn-cgi/`.

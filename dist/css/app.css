@@ -340,3 +340,18 @@ pre { white-space: pre-wrap; font-size: .8rem; }
 .cal-badge .ic { width: 16px; height: 16px; }
 @media (min-width: 900px) { .cal-export { flex-direction: row; flex-wrap: wrap; align-items: center; } .cal-export .card-head { flex-basis: 100%; } .cal-go { flex: 1; min-width: 260px; } .cal-export > .btn:not(.cal-go) { flex: 0 1 auto; } .cal-export p { flex-basis: 100%; margin: 0; } }
 @media (max-width: 767px) { .cal-range { display: grid; grid-template-columns: repeat(4, 1fr); align-self: stretch; } .cal-range button { justify-content: center; padding: 7px 4px; white-space: nowrap; } }
+
+/* Guidewell invoice + payment request sheets */
+.stepper { display: flex; align-items: center; gap: 6px; } .stepper input { flex: 1; min-width: 0; text-align: center; }
+.stepper .icon-btn { font-size: 1.25rem; font-weight: 700; width: 40px; height: 40px; flex: none; border: 1px solid var(--line); border-radius: 10px; }
+.inv-sheet .sub { margin: 14px 0 6px; }
+.inv-line { display: grid; grid-template-columns: 1.1fr 1.1fr 2.4fr .8fr .8fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.inv-line input, .inv-line select { min-width: 0; }
+@media (max-width: 700px) { .inv-line { grid-template-columns: 1fr 1fr; padding: 8px; border: 1px solid var(--line); border-radius: 10px; } .inv-line [data-f=description] { grid-column: 1 / -1; } }
+.inv-tbl td, .inv-tbl th { padding: 5px 6px; white-space: normal; } .inv-tbl td:first-child { max-width: 9em; } .inv-tbl tr.tot td { font-weight: 700; background: var(--surface-2); }
+.inv-grand { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.inv-grand b { font-size: 1.1rem; }
+.email-preview { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); padding: 12px 14px; }
+.email-preview .ep-head { display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.email-preview pre { margin: 0; white-space: pre-wrap; font: inherit; line-height: 1.5; }
+.btn.disabled { opacity: .5; }

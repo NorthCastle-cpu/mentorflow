@@ -1,11 +1,11 @@
-import { state, monthStats, billableByStudent, INVOICE_METHODS, SESSION_STATUS, sessionsInMonth, sessionMethod, nextInvoiceNumber } from '../store.js';
+import { state, monthStats, billableByStudent, INVOICE_METHODS, sessionMethod } from '../store.js';
 import { esc, money, fmtMonth, ym, addMonths, fmtHours, todayStr } from '../util.js';
 import { icon, emptyState, avatar, chip } from '../ui.js';
 import { ui } from '../uistate.js';
 import { barChart, donut } from '../charts.js';
 import { monthNav } from './sessions.js';
 import { labelHex } from '../forms.js';
-import { parentEmail, mailtoUrl } from '../export.js';
+import { directRequests, guidewellInvoice, mailtoUrl } from '../export.js';
 
 export const title = 'Money';
 
@@ -27,9 +27,9 @@ export function render() {
   const methodRows = Object.values(INVOICE_METHODS).map(m => { const b = st.byMethod[m.key]; return `<tr><td><i class="dot" style="background:${m.color}"></i>${esc(m.label)}</td><td class="r">${b.count}</td><td class="r">${fmtHours(b.mins)}</td><td class="r">${money(b.actual)}</td><td class="r muted">${money(b.forecast)}</td></tr>`; }).join('');
 
   const allMarkedFor = (method) => !st.sessions.some(s => s.status === 'scheduled' && s.date < todayStr() && sessionMethod(s) === method);
-  const gw = billableByStudent(month, 'guidewell'); const gwTotal = gw.reduce((a, g) => a + g.total, 0);
+  const gw = billableByStudent(month, 'guidewell'); const gwInv = guidewellInvoice(month); const gwTotal = gwInv.grand;
   const lj = billableByStudent(month, 'luba'); const ljTotal = lj.reduce((a, g) => a + g.total, 0); const ljMins = lj.reduce((a, g) => a + g.mins, 0);
-  const dr = billableByStudent(month, 'direct');
+  const dr = directRequests(month);
   const S = state.settings;
   const gwMail = mailtoUrl({ to: S.guidewellEmail, subject: `Invoice ${fmtMonth(month)} – ${S.yourName || ''}`.trim(), body: `Hello,\n\nPlease find attached my invoice for ${fmtMonth(month)} (${money(gwTotal)}).\n\nKind regards,\n${S.yourName || ''}` });
   const ljMail = mailtoUrl({ to: S.lubaEmail, subject: `Hours for ${fmtMonth(month)} – ${S.yourName || ''}`.trim(), body: `Hi Luba,\n\nPlease find attached my hours for ${fmtMonth(month)}: ${fmtHours(ljMins)}, ${money(ljTotal)} in total.\n\nThanks,\n${S.yourName || ''}` });
@@ -37,7 +37,7 @@ export function render() {
   const checklist = `<section class="card checklist"><header class="card-head"><h3>Month-end checklist · ${esc(fmtMonth(month))}</h3></header>
     <div class="ck-group" style="--m:${INVOICE_METHODS.guidewell.color}"><h4><i class="dot"></i>Guidewell <span class="muted">${gw.length} student${gw.length === 1 ? '' : 's'} · ${money(gwTotal)}</span></h4>
       ${ck(month, 'gw-marked', 'All Guidewell sessions marked', '', allMarkedFor('guidewell'))}
-      ${ck(month, 'gw-invoice', 'Create PDF invoice', `<span class="ck-act"><button class="btn small" data-action="guidewell-pdf" data-month="${month}">${icon('file')} PDF</button><button class="btn small ghost" data-action="guidewell-print" data-month="${month}">Printable</button></span>`)}
+      ${ck(month, 'gw-invoice', `Create invoice${gwInv.number ? ` #${gwInv.number}` : ''}`, `<span class="ck-act"><button class="btn small" data-action="guidewell-invoice" data-month="${month}" data-testid="guidewell-invoice">${icon('file')} Guidewell invoice</button></span>`)}
       ${ck(month, 'gw-sent', 'Email invoice to Guidewell', `<span class="ck-act"><a class="btn small ghost" href="${esc(gwMail)}">${icon('mail')} Email</a></span>`)}
       ${ck(month, 'gw-paid', 'Payment received')}</div>
     <div class="ck-group" style="--m:${INVOICE_METHODS.luba.color}"><h4><i class="dot"></i>Luba Jones <span class="muted">${fmtHours(ljMins)} · ${money(ljTotal)}</span></h4>
@@ -45,10 +45,10 @@ export function render() {
       ${ck(month, 'lj-csv', 'Export hours CSV', `<span class="ck-act"><button class="btn small" data-action="luba-csv" data-month="${month}">${icon('download')} CSV</button></span>`)}
       ${ck(month, 'lj-sent', 'Send hours to Luba Jones', `<span class="ck-act"><a class="btn small ghost" href="${esc(ljMail)}">${icon('mail')} Email</a></span>`)}
       ${ck(month, 'lj-paid', 'Payment received')}</div>
-    <div class="ck-group" style="--m:${INVOICE_METHODS.direct.color}"><h4><i class="dot"></i>Direct (parents) <span class="muted">${money(dr.reduce((a, g) => a + g.total, 0))}</span></h4>
-      ${dr.length ? dr.map(g => { const e = parentEmail(month, g.student.id); return `<div class="ck-parent"><div class="ck-parent-head">${avatar(g.student.name, labelHex(g.student.labelColor))}<div><b>${esc(g.student.name)}</b><small class="muted">${g.sessions.length} sessions · ${fmtHours(g.mins)} · ${money(g.total)}${g.student.parentEmail ? '' : ' · <span class="overdue">no parent email</span>'}</small></div>
-        <span class="ck-act"><a class="btn small" href="${esc(mailtoUrl(e))}" data-action="mark-sent" data-month="${month}" data-key="dr-sent-${g.student.id}">${icon('mail')} Email</a><button class="btn small ghost" data-action="copy-parent" data-month="${month}" data-id="${g.student.id}">${icon('copy')} Copy</button></span></div>
-        ${ck(month, 'dr-sent-' + g.student.id, 'Summary sent')}${ck(month, 'dr-paid-' + g.student.id, 'Paid')}</div>`; }).join('') : '<p class="muted small">No billable direct sessions this month.</p>'}</div>
+    <div class="ck-group" style="--m:${INVOICE_METHODS.direct.color}"><h4><i class="dot"></i>Direct (parents) <span class="muted">${money(dr.reduce((a, x) => a + x.req.amount, 0))}</span></h4>
+      ${dr.length ? dr.map(({ student: st, req }) => `<div class="ck-parent" data-testid="direct-${st.id}"><div class="ck-parent-head">${avatar(st.name, labelHex(st.labelColor))}<div><b>${esc(st.name)}</b><small class="muted">${req.count} lesson${req.count === 1 ? '' : 's'} · ${esc(req.values.hours)}h · £${esc(req.values.amount)}${req.missing.length ? ` · <span class="overdue">no ${esc(req.missing.join(' / '))}</span>` : ''}</small></div>
+        <span class="ck-act"><button class="btn small" data-action="payment-request" data-month="${month}" data-id="${st.id}">${icon('mail')} Request payment</button><button class="btn small ghost" data-action="copy-parent" data-month="${month}" data-id="${st.id}">${icon('copy')} Copy email</button></span></div>
+        ${ck(month, 'dr-sent-' + st.id, 'Payment requested')}${ck(month, 'dr-paid-' + st.id, 'Paid')}</div>`).join('') : '<p class="muted small">No billable direct lessons this month.</p>'}</div>
   </section>`;
 
   return { html: `<div class="view-tools">${monthNav('moneyMonth', month)}</div>
@@ -67,5 +67,5 @@ export function render() {
           <div class="table-wrap"><table class="tbl"><thead><tr><th>Method</th><th class="r">Sessions</th><th class="r">Hours</th><th class="r">Actual</th><th class="r">Forecast</th></tr></thead><tbody>${methodRows}</tbody></table></div></section>
       </div>
       ${checklist}
-    </div>`, actions: `<button class="btn" data-action="export-csv" data-month="${month}">${icon('download')}<span class="hide-sm"> Sessions CSV</span></button>` };
+    </div>`, actions: `<button class="btn" data-action="guidewell-invoice" data-month="${month}">${icon('file')}<span class="hide-sm"> Guidewell invoice</span></button><button class="btn" data-action="export-csv" data-month="${month}">${icon('download')}<span class="hide-sm"> Sessions CSV</span></button>` };
 }

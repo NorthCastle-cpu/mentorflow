@@ -37,7 +37,8 @@ export const sessionUid = (s) => `${s.id}@mentorflow`;
 
 export function eventSummary(s, studentById = () => null) {
   const st = studentById(s.studentId);
-  return `${st?.name || 'Lesson'} – ${st?.subject || 'Tutoring'}`;
+  // Always "{Student full name} – {Topic/Subject}" (the old TimeTree label field is ignored).
+  return `${st?.name || 'Lesson'} – ${(s.subject || '').trim() || st?.subject || 'Tutoring'}`;
 }
 
 /** @param {object} s session  @param {{studentById:Function, alarm?:boolean, now?:Date}} opts */
@@ -50,7 +51,6 @@ export function sessionToVevent(s, { studentById = () => null, alarm = false, no
   if (s.notes) desc.push('', s.notes);
   desc.push('', 'Added from MentorFlow');
   const location = s.location || st?.location || '';
-  const label = st?.label || st?.name?.split(' ')[0] || '';
   const summary = eventSummary(s, studentById);
   const lines = [
     'BEGIN:VEVENT',
@@ -64,7 +64,6 @@ export function sessionToVevent(s, { studentById = () => null, alarm = false, no
     `SUMMARY:${escapeText((cancelled ? 'Cancelled: ' : '') + summary)}`,
     `DESCRIPTION:${escapeText(desc.join('\n'))}`,
     ...(location ? [`LOCATION:${escapeText(location)}`] : []),
-    ...(label ? [`CATEGORIES:${escapeText(label)}`] : []),
     `STATUS:${cancelled ? 'CANCELLED' : 'CONFIRMED'}`,
     `TRANSP:${cancelled ? 'TRANSPARENT' : 'OPAQUE'}`,
   ];

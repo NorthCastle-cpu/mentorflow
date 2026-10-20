@@ -22,7 +22,8 @@ t('time formats', () => {
   assert.equal(extractTime('16:00 - 17:00 Amanda').duration, 60); // "Am…" must not be read as am
 });
 t('full paste', () => {
-  const text = `Monday, 12 October\n16:00 - 17:00 Ava\n18:00–19:30 Casey Example (Biology)\nTue 13 Oct 4:30pm-5:30pm Dana D\n14/10/2026 4pm Ava 90m\n2026-10-15 10:00 Unknown kid\nWed 21 Oct\n• 4-5pm Casey\nOctober 22 3.30pm Ava cancelled\nrandom note line`;
+  // The old TimeTree label field (e.g. 'Ava') is ignored: titles are matched by full name / first name.
+  const text = `Monday, 12 October\n16:00 - 17:00 Sample Student A\n18:00–19:30 Casey Example (Biology)\nTue 13 Oct 4:30pm-5:30pm Dana Demo\n14/10/2026 4pm Sample Student A 90m\n2026-10-15 10:00 Unknown kid\nWed 21 Oct\n• 4-5pm Casey\nOctober 22 3.30pm Sample Student A cancelled\nrandom note line`;
   const r = parseQuickImport(text, { students, existing: [{ studentId: 'a', date: '2026-10-12', start: '16:00' }], today });
   const rows = r.items.map(i => [i.date, i.start, i.duration, i.studentId, i.duplicate, i.cancelled]);
   assert.deepEqual(rows, [
@@ -36,5 +37,7 @@ t('full paste', () => {
   ]);
   assert.deepEqual(r.skipped, ['random note line']);
   assert.equal(r.items.filter(i => i.include).length, 5);
+  const old = parseQuickImport('Mon 12 Oct 16:00 Ava', { students, existing: [], today });
+  assert.equal(old.items[0].studentId, null, 'label-only title no longer matches');
 });
 console.log(`\n${n} parser test groups passed`);

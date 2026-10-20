@@ -2,6 +2,7 @@
 import { state, saveStudent, saveSession, saveTask, saveExpense, deleteStudent, deleteSession, deleteTask, deleteExpense, addSessionsBulk, INVOICE_METHODS, SESSION_STATUS, TASK_STATUS, EXPENSE_CATEGORIES, LABEL_COLORS, studentById, studentName } from './store.js';
 import { openSheet, closeSheet, sheetHeader, toast, confirmDialog, icon } from './ui.js';
 import { esc, todayStr, ymd, parseYmd, addDays, fmtDate, endTime, money } from './util.js';
+import { roundTo5, roundToQuarter } from './billing.js';
 import { parseQuickImport } from './parser.js';
 import { exportSingle } from './calendar-ui.js';
 import { isCalendarExported } from './store.js';
@@ -19,7 +20,7 @@ function bindForm(sheet, onSubmit) {
 
 // ---------------- Student ----------------
 export function studentForm(id) {
-  const s = id ? studentById(id) : { invoiceMethod: 'guidewell', rate: state.settings.defaultRate, defaultDuration: state.settings.defaultDuration, labelColor: LABEL_COLORS[state.students.length % LABEL_COLORS.length].key, active: true };
+  const s = id ? studentById(id) : { invoiceMethod: 'guidewell', rate: null, defaultDuration: state.settings.defaultDuration, labelColor: LABEL_COLORS[state.students.length % LABEL_COLORS.length].key, active: true };
   const methods = Object.values(INVOICE_METHODS).map(m => `<label class="seg-opt"><input type="radio" name="invoiceMethod" value="${m.key}" ${s.invoiceMethod === m.key ? 'checked' : ''}><span><b>${esc(m.label)}</b><small>${esc(m.desc)}</small></span></label>`).join('');
   const colors = LABEL_COLORS.map(c => `<label class="swatch" title="${c.key}"><input type="radio" name="labelColor" value="${c.key}" ${s.labelColor === c.key ? 'checked' : ''}><i style="background:${c.hex}"></i></label>`).join('');
   const sheet = openSheet(`${sheetHeader(id ? 'Edit student' : 'New student')}
@@ -27,21 +28,21 @@ export function studentForm(id) {
     <label class="field"><span>Name</span><input name="name" required value="${esc(s.name)}" placeholder="e.g. Student Name" autofocus></label>
     <label class="field"><span>Subject / focus</span><input name="subject" value="${esc(s.subject)}" placeholder="e.g. GCSE Maths"></label>
     <fieldset class="field"><legend>How do you invoice?</legend><div class="seg-cards">${methods}</div></fieldset>
-    <div class="row2"><label class="field"><span>Hourly rate (£)</span><input name="rate" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(s.rate)}"></label>
+    <div class="row2"><label class="field"><span>Hourly rate (£)</span><input name="rate" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(s.rate ?? '')}" placeholder="Default: Guidewell £${esc(state.settings.guidewellRate ?? 75)}, others £${esc(state.settings.defaultRate)}"></label>
     <label class="field"><span>Usual length (mins)</span><input name="defaultDuration" type="number" inputmode="numeric" min="5" step="5" value="${esc(s.defaultDuration || 60)}"></label></div>
     <div class="row2"><label class="field"><span>Parent / carer name</span><input name="parentName" value="${esc(s.parentName)}"></label>
     <label class="field"><span>Parent email</span><input name="parentEmail" type="email" value="${esc(s.parentEmail)}" inputmode="email"></label></div>
     <div class="row2"><label class="field"><span>Parent phone</span><input name="parentPhone" type="tel" value="${esc(s.parentPhone)}"></label>
     <label class="field"><span>Usual location (optional)</span><input name="location" value="${esc(s.location)}" placeholder="e.g. Online, or address"></label></div>
-    <div class="field"><span>TimeTree label / calendar name <button type="button" class="link-btn" data-action="timetree-tip">${icon('info')} Tip</button></span>
-      <input name="label" value="${esc(s.label)}" placeholder="The word you use in TimeTree event titles"></div>
+    <label class="check"><input type="checkbox" name="schoolCourse" ${s.schoolCourse ? 'checked' : ''} data-testid="student-school-course"> School / group course (Guidewell invoice “Schools Courses” section)</label>
     <div class="field"><span>Colour</span><div class="swatches">${colors}</div></div>
     <label class="field"><span>Notes</span><textarea name="notes" rows="3">${esc(s.notes)}</textarea></label>
     <label class="check"><input type="checkbox" name="active" ${s.active !== false ? 'checked' : ''}> Active student</label>
   </form>
   <footer class="sheet-foot">${id ? `<button class="btn danger ghost" data-x="del">${icon('trash')} Delete</button>` : ''}<span class="grow"></span><button class="btn" data-action="close-sheet">Cancel</button><button class="btn primary" type="submit" form="student-form">Save</button></footer>`);
   bindForm(sheet, (d) => {
-    const rec = saveStudent({ ...s, ...d, name: d.name.trim(), rate: d.rate === '' ? null : +d.rate, defaultDuration: +d.defaultDuration || 60, active: !!d.active });
+    const { label: _oldLabel, ...rest } = s; // the old TimeTree label field is no longer used
+    const rec = saveStudent({ ...rest, ...d, name: d.name.trim(), rate: d.rate === '' ? null : +d.rate, defaultDuration: roundTo5(+d.defaultDuration || 60), active: !!d.active, schoolCourse: !!d.schoolCourse });
     closeSheet(); toast(id ? 'Student updated' : `Added ${rec.name}`, { type: 'ok' });
   });
   sheet.querySelector('[data-x=del]')?.addEventListener('click', async () => {
@@ -54,10 +55,10 @@ export function studentForm(id) {
 
 export function timetreeTip() {
   openSheet(`${sheetHeader('TimeTree label tip')}<div class="sheet-body prose">
-  <p>Quick Import matches each pasted event to a student by looking for their <b>label</b>, then their <b>full name</b>, then their <b>first name</b> in the event title.</p>
-  <ol><li>In TimeTree, start every lesson title with the student's label, e.g. <code>Student A – Maths</code> or <code>Student C (Bio)</code>.</li>
+  <p>Quick Import matches each pasted event to a student by looking for their <b>full name</b>, then their <b>first name</b>, in the event title.</p>
+  <ol><li>In TimeTree, start every lesson title with the student's full name, e.g. <code>Student A – Maths</code>. Lessons MentorFlow sends to Calendar are always titled <code>Full Name – Subject</code>.</li>
   <li>Give each student their own TimeTree <b>label colour</b> and pick the same colour here so the calendar looks familiar.</li>
-  <li>If two students share a first name, set unique labels such as <code>Jo B</code> and <code>Jo K</code>.</li>
+  <li>If two students share a first name, use their full names in TimeTree.</li>
   <li>Open the day/week list in TimeTree, select the events, copy, and paste into <b>Sessions → Quick Import</b>. Lines with a date on their own act as headings for the events below them.</li>
   <li>Add <code>cancelled</code> to an event title and it will be imported as cancelled.</li></ol>
   <p><b>Going the other way:</b> lessons logged in MentorFlow can be sent to your iPad Calendar. Tap <b>Add … lessons to Calendar</b> on Today each evening → <b>Add All</b>. TimeTree then shows them on its <b>home calendar</b> (not shared calendars) if it has access: <b>Settings › TimeTree › Calendars → Full Access</b>.</p>
@@ -77,10 +78,13 @@ export function sessionForm(id, preset = {}) {
     <label class="field"><span>Student</span><select name="studentId" required>${!s.studentId ? '<option value="">Choose…</option>' : ''}${students.map(st => opt(st.id, `${st.name}${st.subject ? ' · ' + st.subject : ''}`, s.studentId)).join('')}</select></label>
     <div class="row3"><label class="field"><span>Date</span><input type="date" name="date" required value="${esc(s.date)}"></label>
     <label class="field"><span>Start</span><input type="time" name="start" required value="${esc(s.start)}" step="300"></label>
-    <label class="field"><span>Minutes</span><input type="number" name="duration" required min="5" max="600" step="5" inputmode="numeric" value="${esc(s.duration)}" list="dur-list"><datalist id="dur-list"><option value="30"><option value="45"><option value="60"><option value="90"><option value="120"></datalist></label></div>
+    <div class="field"><span>Length (mins)</span><div class="stepper"><button type="button" class="icon-btn" data-x="dur-" aria-label="5 minutes less">−</button><input type="number" name="duration" required min="5" max="600" step="5" inputmode="numeric" value="${esc(s.duration)}" list="dur-list" data-testid="session-duration"><button type="button" class="icon-btn" data-x="dur+" aria-label="5 minutes more">+</button></div><datalist id="dur-list"><option value="30"><option value="45"><option value="50"><option value="55"><option value="60"><option value="75"><option value="90"><option value="120"></datalist></div></div>
+    <label class="field"><span>Topic / subject (optional)</span><input name="subject" value="${esc(s.subject ?? '')}" placeholder="Uses student's subject" data-testid="session-subject"></label>
     <div class="field"><span>Status</span><div class="seg">${Object.entries(SESSION_STATUS).map(([k, v]) => `<label><input type="radio" name="status" value="${k}" ${s.status === k ? 'checked' : ''}><span>${esc(v.label.replace(' (charged)', ''))}</span></label>`).join('')}</div></div>
     <label class="field"><span>Location (optional)</span><input name="location" value="${esc(s.location ?? '')}" placeholder="Uses student's usual location"></label>
-    <label class="field"><span>Rate override (£/h, optional)</span><input type="number" name="rate" min="0" step="0.01" inputmode="decimal" value="${esc(s.rate ?? '')}" placeholder="Uses student's rate"></label>
+    <div class="row2"><label class="field"><span>Rate override (£/h, optional)</span><input type="number" name="rate" min="0" step="0.01" inputmode="decimal" value="${esc(s.rate ?? '')}" placeholder="Uses student's rate"></label>
+    <label class="field"><span>Travel (£, optional)</span><input type="number" name="travel" min="0" step="0.01" inputmode="decimal" value="${esc(s.travel ?? '')}" placeholder="0"></label></div>
+    <label class="check"><input type="checkbox" name="noBill" ${s.noBill ? 'checked' : ''} data-testid="session-nobill"> Don’t bill this session (leave it off invoices and payment emails)</label>
     <label class="field"><span>Notes</span><textarea name="notes" rows="3" placeholder="What did you cover?">${esc(s.notes)}</textarea></label>
     ${!id ? `<label class="field"><span>Repeat weekly</span><select name="repeat">${[0, 1, 2, 3, 5, 7, 11].map(n => opt(n, n ? `+ ${n} more week${n > 1 ? 's' : ''}` : 'Does not repeat', 0)).join('')}</select></label>` : ''}
     <p class="muted small" data-x="value"></p>
@@ -90,14 +94,19 @@ export function sessionForm(id, preset = {}) {
   const form = sheet.querySelector('form');
   const updateValue = () => {
     const d = formData(form); const st = studentById(d.studentId);
-    const rate = d.rate !== '' ? +d.rate : (st?.rate ?? state.settings.defaultRate);
-    sheet.querySelector('[data-x=value]').textContent = st ? `${fmtDate(d.date)} · ${d.start}–${endTime(d.start, d.duration)} · ${money(rate * (+d.duration || 0) / 60)} at ${money(rate)}/h` : '';
+    const rate = d.rate !== '' ? +d.rate : (st?.rate ?? (st?.invoiceMethod === 'guidewell' ? (state.settings.guidewellRate ?? 75) : state.settings.defaultRate));
+    const billed = roundToQuarter(d.duration);
+    sheet.querySelector('[data-x=value]').textContent = st ? `${fmtDate(d.date)} · ${d.start}–${endTime(d.start, d.duration)} · ${d.noBill ? 'not billed' : `${money(rate * billed / 60)} at ${money(rate)}/h${billed !== +d.duration ? ` (billed as ${billed / 60} h)` : ''}`}` : '';
   };
   form.addEventListener('input', updateValue);
+  const step = (n) => { form.duration.value = Math.min(600, roundTo5((+form.duration.value || 0) + n)); updateValue(); };
+  sheet.querySelector('[data-x="dur-"]').addEventListener('click', () => step(-5));
+  sheet.querySelector('[data-x="dur+"]').addEventListener('click', () => step(5));
+  form.duration.addEventListener('change', () => { form.duration.value = roundTo5(form.duration.value); updateValue(); });
   form.studentId.addEventListener('change', () => { const st = studentById(form.studentId.value); if (st && !id) form.duration.value = st.defaultDuration || form.duration.value; updateValue(); });
   updateValue();
   bindForm(sheet, (d) => {
-    const base = { ...(ex || {}), studentId: d.studentId, date: d.date, start: d.start, duration: +d.duration, status: d.status || 'scheduled', rate: d.rate === '' ? null : +d.rate, location: d.location || '', notes: d.notes, source: ex?.source || 'manual' };
+    const base = { ...(ex || {}), studentId: d.studentId, date: d.date, start: d.start, duration: roundTo5(+d.duration), status: d.status || 'scheduled', rate: d.rate === '' ? null : +d.rate, subject: (d.subject || '').trim(), travel: d.travel === '' || d.travel == null ? null : +d.travel, noBill: !!d.noBill, location: d.location || '', notes: d.notes, source: ex?.source || 'manual' };
     saveSession(base);
     const rep = +d.repeat || 0;
     if (rep) addSessionsBulk(Array.from({ length: rep }, (_, i) => ({ ...base, id: undefined, date: ymd(addDays(parseYmd(d.date), 7 * (i + 1))), status: 'scheduled', notes: '' })));

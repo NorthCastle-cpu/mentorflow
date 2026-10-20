@@ -92,7 +92,7 @@ export function matchStudent(text, students) {
   let best = null, bestScore = 0;
   for (const s of students) {
     const keys = [];
-    if (s.label) keys.push([norm(s.label), 4]);
+    // (The old per-student TimeTree label is ignored: matching uses the full name, then first/last name.)
     if (s.name) { keys.push([norm(s.name), 3]); const parts = norm(s.name).split(' '); keys.push([parts[0], 2]); if (parts.length > 1) keys.push([parts[parts.length - 1], 1]); }
     for (const [k, w] of keys) {
       if (!k || k.length < 2) continue;

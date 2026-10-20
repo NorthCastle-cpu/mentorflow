@@ -165,20 +165,27 @@ async function functional(type, launcher) {
     assert.match(lines[0], /^Date,Start,End,Duration/); assert.equal(lines.length, 4);
     assert.ok(csv.includes('Test Student One') && csv.includes('40.00'));
   });
-  await step('direct parent email: mailto + clipboard text with bank details', async () => {
-    const href = await page.locator('.ck-parent a:has-text("Email")').getAttribute('href');
-    assert.ok(href.startsWith('mailto:parent%40example.com?subject='));
-    assert.ok(decodeURIComponent(href).includes('Sort code'));
-    const text = await page.evaluate(async (m) => { const mod = await import('./js/export.js'); const s = window.__mentorflow.state.students[0]; return mod.parentEmail(m, s.id).body; }, month);
-    assert.match(text, /Total: £80\.00/);
+  await step('direct parent payment request: prompts for parent name, exact template, mailto draft', async () => {
+    await page.click('.ck-parent:has-text("Test Student One") button[data-action=payment-request]');
+    await sheet.locator('[data-testid=payreq-missing]').waitFor(); // no parent first name yet
+    await sheet.locator('[data-testid=payreq-parent]').fill('Pat'); await sheet.locator('[data-testid=payreq-parent]').dispatchEvent('change');
+    const body = await sheet.locator('[data-testid=payreq-body]').inputValue();
+    const mon = new Date(today.getFullYear(), today.getMonth(), 1).toLocaleDateString('en-GB', { month: 'long' });
+    assert.ok(body.startsWith('Hi Pat,\n\nI’m just reaching out to request payment of £80 for Test’s 2 hours of Maths in ' + mon + ', at your earliest convenience. \n\nMy bank details are:\n[your bank details here]\n'), body);
+    const href = await sheet.locator('[data-testid=payreq-mail]').getAttribute('href');
+    assert.ok(href.startsWith('mailto:parent@example.com?subject=')); assert.equal(decodeURIComponent(href.split('&body=')[1]), body);
+    await page.waitForFunction(() => window.__mentorflow.state.students.find(s => s.name === 'Test Student One')?.parentName === 'Pat');
+    await page.keyboard.press('Escape'); await page.waitForSelector('.sheet', { state: 'detached' });
   });
-  await step('Guidewell PDF invoice generates (jsPDF, vendored)', async () => {
+  await step('Guidewell invoice PDF generates on-device (jsPDF, vendored)', async () => {
     await page.evaluate(async (T) => { const st = await import('./js/store.js'); const s = st.saveStudent({ name: 'Agency Pupil', invoiceMethod: 'guidewell', rate: 30, active: true }); st.saveSession({ studentId: s.id, date: T, start: '12:00', duration: 90, status: 'completed' }); }, T);
-    await page.goto(BASE + '#/money');
-    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button[data-action=guidewell-pdf]')]);
+    await page.goto(BASE + '#/money'); await page.click('[data-testid=guidewell-invoice]');
+    await sheet.locator('[data-testid=invoice-preview]:has-text("Agency Pupil")').waitFor();
+    const [dl] = await Promise.all([page.waitForEvent('download'), sheet.locator('[data-testid=invoice-pdf]').click()]);
     const buf = readFileSync(await dl.path());
     assert.equal(buf.subarray(0, 4).toString(), '%PDF'); assert.ok(buf.length > 2000, 'pdf size ' + buf.length);
-    assert.match(dl.suggestedFilename(), /^guidewell-invoice-\d{4}-\d{2}-MF-0001\.pdf$/);
+    assert.match(dl.suggestedFilename().replace(/_/g, ' '), /^Invoice \d+ - [A-Z][a-z]+ \d{4}\.pdf$/);
+    await page.keyboard.press('Escape'); await page.waitForSelector('.sheet', { state: 'detached' });
   });
   await step('Luba Jones hours CSV downloads', async () => {
     const [dl] = await Promise.all([page.waitForEvent('download'), page.click('button[data-action=luba-csv]')]);
@@ -236,7 +243,7 @@ async function functional(type, launcher) {
   });
   await step('sample data loads (fictional) and clears', async () => {
     await page.goto(BASE + '#/more'); await page.click('button[data-action=sample-data]');
-    await page.waitForFunction(() => window.__mentorflow.state.students.length === 7);
+    await page.waitForFunction(() => window.__mentorflow.state.students.length === 8);
     const names = await page.evaluate(() => window.__mentorflow.state.students.filter(s => s.sample).map(s => s.name).join());
     assert.match(names, /Sample Student A/);
     await page.goto(BASE + '#/more'); await page.click('button[data-action=clear-sample]'); await sheet.locator('button:has-text("Clear sample data")').click();

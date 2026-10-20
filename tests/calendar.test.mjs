@@ -49,12 +49,13 @@ await t('ical.js parses the calendar and all fields are right', () => {
   assert.equal(e1.sequence, 2);
   assert.match(e1.description, /^Channel: Guidewell/); assert.match(e1.description, /Bring calculator, ruler; past paper 2/);
   assert.equal(e1.location, null);
-  assert.deepEqual(e1.component.getFirstProperty('categories').getValues(), ['Student A']);
+  assert.equal(e1.component.getFirstProperty('categories'), null, 'old TimeTree label is ignored');
+  assert.equal(e1.summary, 'Sample Student A – GCSE Maths');
   const e2 = evs.find(e => e.uid === `${s2.id}@mentorflow`);
   assert.equal(e2.summary, 'Sample Student B – English; essays, poetry'); // escaping round-trips
   assert.equal(e2.startDate.toJSDate().toISOString(), '2026-12-01T17:30:00.000Z'); // GMT
   assert.equal(e2.duration.toSeconds(), 5400); assert.equal(e2.location, 'Online');
-  assert.deepEqual(e2.component.getFirstProperty('categories').getValues(), ['Sample']); // no label → first name
+  assert.equal(e2.component.getFirstProperty('categories'), null);
   const e3 = evs.find(e => e.uid === `${s3.id}@mentorflow`);
   assert.equal(e3.component.getFirstPropertyValue('status'), 'CANCELLED');
   assert.ok(!/£|38|50\.00|rate/i.test(ics.replace(/UID:.*|DTSTAMP:.*|CREATED:.*|LAST-MODIFIED:.*|DTSTART.*|DTEND.*/g, '')), 'no money in export');

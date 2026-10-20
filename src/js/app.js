@@ -7,7 +7,9 @@ import { esc, money, fmtDate, todayStr, ym, addMonths, download, copyText, toCsv
 import { icon, openSheet, closeSheet, sheetHeader, sheetOpen, toast, confirmDialog, avatar } from './ui.js';
 import { ui, setUi } from './uistate.js';
 import { studentForm, sessionForm, taskForm, expenseForm, quickImport, timetreeTip, labelHex } from './forms.js';
-import { downloadSessionsCsv, downloadLubaCsv, guidewellPdf, openPrintableInvoice, parentEmail } from './export.js';
+import { downloadSessionsCsv, downloadLubaCsv, paymentRequestFor } from './export.js';
+import { guidewellInvoiceSheet, paymentRequestSheet } from './invoice-ui.js';
+import { DEFAULT_PAYMENT_TEMPLATE, DEFAULT_PAYMENT_SUBJECT } from './payreq.js';
 import { calendarHelp, exportRange, exportSince, exportUpcoming, setRange } from './calendar-ui.js';
 import * as Today from './views/today.js';
 import * as Students from './views/students.js';
@@ -128,14 +130,15 @@ const ACTIONS = {
     download(`mentorflow-expenses-${m}.csv`, toCsv(rows), 'text/csv'); toast('Expenses CSV downloaded', { type: 'ok' });
   },
   'luba-csv': (el) => { downloadLubaCsv(el.dataset.month); setChecklist(el.dataset.month, 'lj-csv', true); toast('Luba Jones hours CSV downloaded', { type: 'ok' }); },
-  'guidewell-pdf': async (el) => {
-    try { const r = await guidewellPdf(el.dataset.month); setChecklist(el.dataset.month, 'gw-invoice', true); toast(`Invoice ${r.invoice.invoiceNo} downloaded`, { type: 'ok' }); }
-    catch (e) { console.error(e); toast('PDF failed – opening printable invoice instead', { type: 'warn' }); openPrintableInvoice(el.dataset.month); }
-  },
-  'guidewell-print': (el) => { openPrintableInvoice(el.dataset.month); },
+  'guidewell-invoice': (el) => guidewellInvoiceSheet(el.dataset.month || ui.moneyMonth),
+  'payment-request': (el) => paymentRequestSheet(el.dataset.month, el.dataset.id),
   'mark-sent': (el) => { setChecklist(el.dataset.month, el.dataset.key, true); return 'default'; },
-  'copy-parent': async (el) => { const e = parentEmail(el.dataset.month, el.dataset.id); const ok = await copyText(`To: ${e.to}\nSubject: ${e.subject}\n\n${e.body}`); toast(ok ? 'Email text copied' : 'Copy failed', { type: ok ? 'ok' : 'warn' }); },
+  'copy-parent': async (el) => { const e = paymentRequestFor(el.dataset.month, el.dataset.id); if (!e) return; const ok = await copyText(`To: ${e.to}\nSubject: ${e.subject}\n\n${e.body}`); toast(ok ? 'Email copied' : 'Copy failed', { type: ok ? 'ok' : 'warn' }); },
   'backup-export': () => backupNow(),
+  'reset-payment-template': async () => {
+    if (!(await confirmDialog('Replace your payment request email template with the original wording? Your bank details in it will be replaced by “[your bank details here]”.', { confirmText: 'Reset template', title: 'Reset template?' }))) return;
+    saveSettings({ paymentEmailTemplate: DEFAULT_PAYMENT_TEMPLATE, paymentEmailSubject: DEFAULT_PAYMENT_SUBJECT }); toast('Template reset', { type: 'ok' });
+  },
   'restore-backup': () => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json,.json'; inp.style.display = 'none'; document.body.appendChild(inp); inp.addEventListener('change', () => { restoreFromFile(inp.files?.[0]).finally(() => inp.remove()); }); inp.click(); },
   'dismiss-backup-reminder': () => saveSettings({ backupReminderDismissedAt: new Date().toISOString() }),
   'sample-data': async () => {
@@ -237,7 +240,7 @@ function searchResults(q) {
   q = q.trim().toLowerCase(); if (!q) return [];
   const has = (...xs) => xs.join(' ').toLowerCase().includes(q);
   const out = [];
-  state.students.filter(s => has(s.name, s.subject, s.parentName, s.parentEmail, s.label, s.notes)).slice(0, 8).forEach(s => out.push({ group: 'Students', html: `${avatar(s.name, labelHex(s.labelColor))}<span><b>${esc(s.name)}</b><small>${esc(s.subject || '')} · ${esc(INVOICE_METHODS[s.invoiceMethod]?.label || '')}</small></span>`, run: () => go('#/students/' + s.id) }));
+  state.students.filter(s => has(s.name, s.subject, s.parentName, s.parentEmail, s.notes)).slice(0, 8).forEach(s => out.push({ group: 'Students', html: `${avatar(s.name, labelHex(s.labelColor))}<span><b>${esc(s.name)}</b><small>${esc(s.subject || '')} · ${esc(INVOICE_METHODS[s.invoiceMethod]?.label || '')}</small></span>`, run: () => go('#/students/' + s.id) }));
   state.sessions.filter(s => has(studentName(s.studentId), s.date, fmtDate(s.date), s.notes, SESSION_STATUS[s.status]?.label)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).forEach(s => out.push({ group: 'Sessions', html: `<span><b>${esc(studentName(s.studentId))} · ${esc(fmtDate(s.date))} ${esc(s.start)}</b><small>${esc(SESSION_STATUS[s.status]?.label)} · ${money(sessionValue(s))}${s.notes ? ' · ' + esc(s.notes) : ''}</small></span>`, run: () => sessionForm(s.id) }));
   state.tasks.filter(t => has(t.title, t.notes, t.studentId ? studentName(t.studentId) : '')).slice(0, 8).forEach(t => out.push({ group: t.type === 'homework' ? 'Homework' : 'Tasks', html: `<span><b>${esc(t.title)}</b><small>${t.studentId ? esc(studentName(t.studentId)) + ' · ' : ''}${t.due ? 'Due ' + esc(fmtDate(t.due)) : 'No due date'} · ${t.status === 'done' ? 'Done' : 'Open'}</small></span>`, run: () => taskForm(t.id) }));
   state.expenses.filter(x => has(x.description, x.category, x.date)).slice(0, 6).forEach(x => out.push({ group: 'Expenses', html: `<span><b>${esc(x.description || x.category)}</b><small>${esc(fmtDate(x.date))} · ${money(x.amount)}</small></span>`, run: () => expenseForm(x.id) }));
